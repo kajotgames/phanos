@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "phanos_Mira42"
+name = "phanos"
 version = "0.0.1"
 authors = [
   { name="Miroslav Bulička", email="bulickamiroslav@gmail.com" },
