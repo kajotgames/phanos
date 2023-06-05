@@ -74,6 +74,9 @@ class MetricWrapper:
         return records
 
     def _check_labels(self, labels):
+        """ Check if labels of records == labels specified at init
+        :param labels: label keys and values of one record
+        """
         measurement_labels = (
             [label_name for label_name in labels.keys()] if labels else []
         )
@@ -422,14 +425,19 @@ class TimeProfiler(Histogram):
         )
         self._last_stamp = self._tmp
 
-    def _check_labels(self, labels):
-        labels_to_check = labels.append({"action": 1}) if labels else {"action": 1}
+    def _check_labels(self, labels: typing.Optional[typing.Dict[str, str]]) -> bool:
+        """ Check if labels of records == labels specified at init
+        :param labels: label keys and values of one record
+        """
+        labels_to_check = labels.copy() if labels else {}
+        labels_to_check["action"] = "Dummy"
         measurement_labels = [label_name for label_name in labels_to_check.keys()]
         if sorted(measurement_labels) == sorted(self.label_names):
             return True
         return False
 
-    def cleanup(self):
+    def cleanup(self) -> None:
+        """Method responsible for cleanup after publishing records"""
         super().cleanup()
         self._last_stamp = None
         self.start = None
@@ -465,7 +473,7 @@ class ResponseSize(Histogram):
         self.operations = {"rec": self._rec}
         self.default_operation = "rec"
 
-    def _rec(self, value: bytes, *args, **kwargs):
+    def _rec(self, value: str, *args, **kwargs) -> None:
         _ = args
         _ = kwargs
         with app.app_context():
@@ -566,24 +574,24 @@ class ProfilesPublisher:
         self._metrics["response_size"] = ResponseSize("response_size")
         return self
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """disconnects the RabbitMQ and delete all metric instances"""
         self._publisher.close()
         # self.delete_metrics()
 
-    def delete_metric(self, item: str):
+    def delete_metric(self, item: str) -> None:
         """deletes one metric instance"""
         _ = self._metrics.pop(item, None)
 
-    def delete_metrics(self):
+    def delete_metrics(self) -> None:
         """deletes all metric instances"""
         self._metrics = {}
 
-    def add_metric(self, metric: MetricWrapper):
+    def add_metric(self, metric: MetricWrapper) -> None:
         """adds new metric"""
         self._metrics[metric.item] = metric
 
-    def publish(self, record):
+    def publish(self, record: Record) -> bool:
         """send one record to RabbitMQ  queue"""
         return self._publisher.publish(record)
 
@@ -624,7 +632,7 @@ class ProfilesPublisher:
 
         return _send_profiling
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: str) -> MetricWrapper:
         return self._metrics[item]
 
 
