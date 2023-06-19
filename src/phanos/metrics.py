@@ -1,18 +1,27 @@
-""" """
 from __future__ import annotations
-import logging
+
 import sys
 import typing
 from datetime import datetime as dt
-from functools import wraps
 
-import aio_pika
-from imp_prof.messaging.publisher import BlockingPublisher
-from imp_prof.types import Record
-from pika.exceptions import AMQPConnectionError
-from flask import request, current_app as app
+from flask import current_app as app, request
 
-from logging import Logger
+
+class Record(typing.TypedDict):
+    """One profiling log record."""
+
+    item: str  # name of object measured
+    metric: str  # metric used to measure item
+    units: str  # units of metric used to measure item
+    value: typing.Union[
+        float, str, tuple[str, typing.Union[float, dict[str, typing.Any]]]
+    ]  # value to record in
+    # metric, in given units
+    job: str  # label marking who created the record
+    method: str  # which method of item is measured
+    labels: typing.Optional[
+        typing.Dict[str, str]
+    ]  # labels with values to categorise record correctly
 
 
 class MetricWrapper:
@@ -40,6 +49,7 @@ class MetricWrapper:
         Initialize Metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
@@ -53,10 +63,12 @@ class MetricWrapper:
         self._label_values = []
         self.operations = {}
         self.default_operation = ""
-        publisher.add_metric(self)
+        # TODO: later if more metrics should be sent
+        # publisher.add_metric(self)
 
     def _to_records(self):
         """Convert measured values into Type Record
+
         :returns: List of records"""
         records = []
         for i in range(len(self._values)):
@@ -74,13 +86,11 @@ class MetricWrapper:
         return records
 
     def _check_labels(self, labels):
-        """ Check if labels of records == labels specified at init
+        """Check if labels of records == labels specified at init
+
         :param labels: label keys and values of one record
         """
-        measurement_labels = (
-            [label_name for label_name in labels.keys()] if labels else []
-        )
-        if sorted(measurement_labels) == sorted(self.label_names):
+        if sorted(labels) == sorted(self.label_names):
             return True
         return False
 
@@ -108,13 +118,16 @@ class MetricWrapper:
         :param kwargs: will be passed to specific operation of given metric
         :raise ValueError: if operation does not exist for given metric.
         """
+        # TODO: later when testing with endpoints
         with app.app_context():
             if self.job == "":
                 self.job = app.import_name.split(".")[0].upper()
             self.method = request.method
+
+        if label_values is None:
+            label_values = {}
         try:
-            print(label_values)
-            labels_ok = self._check_labels(label_values)
+            labels_ok = self._check_labels(label_values.keys())
             if labels_ok and label_values is not None:
                 self._label_values.append(label_values)
             elif labels_ok:
@@ -148,6 +161,7 @@ class Histogram(MetricWrapper):
         Initialize Histogram metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
@@ -159,6 +173,7 @@ class Histogram(MetricWrapper):
 
     def _observe(self, value: float, *args, **kwargs) -> None:
         """Method representing observe action of Histogram
+
         :param value: measured value
         """
         _ = args
@@ -183,6 +198,7 @@ class Summary(MetricWrapper):
         Initialize Summary metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
@@ -194,6 +210,7 @@ class Summary(MetricWrapper):
 
     def _observe(self, value: float, *args, **kwargs) -> None:
         """Method representing observe action of Summary
+
         :param value: measured value
         """
         _ = args
@@ -218,6 +235,7 @@ class Counter(MetricWrapper):
         Initialize Counter metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
@@ -229,6 +247,7 @@ class Counter(MetricWrapper):
 
     def _inc(self, value: float, *args, **kwargs) -> None:
         """Method representing inc action of counter
+
         :param value: measured value
         """
         _ = args
@@ -246,17 +265,20 @@ class Info(MetricWrapper):
     def __init__(
         self,
         item: str,
-        units: str,
+        units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
         """
         Initialize Info metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
+        if units is None:
+            units = "info"
         super().__init__(item, units, labels)
         self.metric = "info"
         self.default_operation = "info"
@@ -266,6 +288,7 @@ class Info(MetricWrapper):
         self, value: typing.Dict[typing.Any, typing.Any], *args, **kwargs
     ) -> None:
         """Method representing info action of info
+
         :param value: measured value
         """
         _ = args
@@ -290,6 +313,7 @@ class Gauge(MetricWrapper):
         Initialize Gauge metric and stores it into publisher instance
 
         Set values that are in Type Record.
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
@@ -305,6 +329,7 @@ class Gauge(MetricWrapper):
 
     def _inc(self, value: float, *args, **kwargs) -> None:
         """Method representing inc action of gauge
+
         :param value: measured value
         """
         _ = args
@@ -315,6 +340,7 @@ class Gauge(MetricWrapper):
 
     def _dec(self, value: float, *args, **kwargs) -> None:
         """Method representing dec action of gauge
+
         :param value: measured value
         """
         _ = args
@@ -325,6 +351,7 @@ class Gauge(MetricWrapper):
 
     def _set(self, value: float, *args, **kwargs) -> None:
         """Method representing set action of gauge
+
         :param value: measured value
         """
         _ = args
@@ -343,19 +370,22 @@ class Enum(MetricWrapper):
     def __init__(
         self,
         item: str,
-        units: str,
         states: typing.List[str],
+        units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
         """
         Initialize Enum metric and stores it into publisher instance
 
-        Set values that are in Type Record.
+        Set values that are in Type Record
+
         :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param states: states which can enum have
         :param labels: label_names of metric viz. Type Record
         """
+        if units is None:
+            units = "enum"
         super().__init__(item, units, labels)
         self.metric = "enum"
         self.default_operation = "state"
@@ -364,6 +394,7 @@ class Enum(MetricWrapper):
 
     def _state(self, value: str, *args, **kwargs) -> None:
         """Method representing state action of enum
+
         :param value: measured value
         :raises ValueError: if value not in states at initialization
         """
@@ -373,7 +404,7 @@ class Enum(MetricWrapper):
             raise TypeError(
                 f"State  {value} not allowed for this Enum. Allowed values: {self.states}"
             )
-        self._values.append(value)
+        self._values.append(("state", value))
 
 
 class TimeProfiler(Histogram):
@@ -382,6 +413,8 @@ class TimeProfiler(Histogram):
 
     measured unit is milliseconds
     """
+
+    start_ts: typing.List[dt]
 
     def __init__(
         self,
@@ -393,69 +426,43 @@ class TimeProfiler(Histogram):
         :param labels: label_names of metric viz. Type Record
         """
         super().__init__(item, "mS", labels)
-        self.operations = {"rec": self._rec, "reset": self._reset}
-        self.default_operation = "rec"
-        self.start: typing.Optional[dt] = None
-        self._last_stamp: typing.Optional[dt] = None
-        self._tmp: typing.Optional[dt] = None
-        # records in histogram.value
-        self.label_names.append("action")
+        self.operations = {"stop": self._stop}
+        self.default_operation = "stop"
+        self._start_ts = []
 
-    def _reset(self, *args, **kwargs) -> None:
-        """Resets time measurement"""
+    # ############################### measurement operations -> checking labels, not sending records
+    # TODO: action???
+    def _stop(self, *args, **kwargs) -> None:
+        """Records time difference between last start_ts and now"""
         _ = args
         _ = kwargs
-        self._last_stamp = dt.now()
+        method_time = dt.now() - self._start_ts.pop(-1)
 
-    def _rec(self, action: str, *args, **kwargs) -> None:
-        """Records time difference between last timestamp and now
-        :param action: name of measured action
-        """
-        _ = args
-        _ = kwargs
-        if self.start is None:
-            self.start = dt.now()
-            self._last_stamp = dt.now()
-        self._tmp = dt.now()
-
-        self._label_values[-1]["action"] = action
-        print(self._label_values[-1]["action"])
         self._observe(
-            (self._tmp - self._last_stamp).total_seconds() * 1000.0,
+            method_time.total_seconds() * 1000.0,
         )
-        self._last_stamp = self._tmp
 
-    def _check_labels(self, labels: typing.Optional[typing.Dict[str, str]]) -> bool:
-        """ Check if labels of records == labels specified at init
-        :param labels: label keys and values of one record
-        """
-        labels_to_check = labels.copy() if labels else {}
-        labels_to_check["action"] = "Dummy"
-        measurement_labels = [label_name for label_name in labels_to_check.keys()]
-        if sorted(measurement_labels) == sorted(self.label_names):
-            return True
-        return False
+    # ############################### helper operations -> not checking labels, not checking records
+    def start(self, *args, **kwargs) -> None:
+        """Starts time measurement - stores dt.now()"""
+        _ = args
+        _ = kwargs
+        self._start_ts.append(dt.now())
 
     def cleanup(self) -> None:
         """Method responsible for cleanup after publishing records"""
         super().cleanup()
-        self._last_stamp = None
-        self.start = None
-        self._tmp = None
+        self._start_ts = []
 
     def __str__(self):
-        full_name = self.item or "n-a"
-        actions_timestamps = ", ".join(
-            (
-                "{} {}".format(self._label_values[i]["action"], self._values[i][1])
-                for i in range(len(self._values))
-            )
-        )
-        return "profile %s - %s - total %s - steps %s" % (
-            self.start,
-            full_name,
-            ((self._last_stamp - self.start).total_seconds() * 1000.0),
-            actions_timestamps,
+        return (
+            "profiler: "
+            + self.item
+            + ", context: "
+            + self._label_values[-1]["context"]
+            + ", value: "
+            + str(self._values[-1][1])
+            + " ms"
         )
 
 
@@ -474,166 +481,20 @@ class ResponseSize(Histogram):
         self.default_operation = "rec"
 
     def _rec(self, value: str, *args, **kwargs) -> None:
+        """records size of response"""
         _ = args
         _ = kwargs
+
         with app.app_context():
             self._observe(float(sys.getsizeof(value)))
 
     def __str__(self):
-        return "Response size record: %s" % self._values
-
-
-class ProfilesPublisher:
-    """Class responsible for sending records to IMP_prof RabbitMQ publish queue
-
-    Example of usage: ..
-        ...
-        from phanos import publisher
-        ...
-        publisher.connect(**connection_params)
-        ...
-        *metrics initialization*
-        ...
-        @publisher.send_profiling()
-        def get(self):
-            ...
-            publisher["measure_db_access"].record_op("rec", 5.1, "post_item", [asd,asd])
-            ...
-            publisher["next_metric"].record_op("inc", 2, [asd,asd])
-            ...
-            return {'success': 1}, 200
-    """
-
-    _logger: typing.Optional[Logger]
-    _publisher: typing.Optional.BlockingPublisher
-    _metrics: typing.Dict[str, MetricWrapper]
-
-    def __init__(
-        self,
-    ) -> None:
-        """Initialize ProfilesPublisher
-
-        Initialization just creates new instance!! for connection to IMP_prof use connect method!
-        """
-        self._logger = None
-        self._publisher = None
-        self._metrics = {}
-
-    def connect(
-        self,
-        host: str = "127.0.0.1",
-        port: int = 5672,
-        user: str = None,
-        password: str = None,
-        heartbeat: int = 47,
-        timeout: float = 23,
-        retry_delay: float = 0.137,
-        retry: int = 3,
-        exchange_name: str = "profiling",
-        exchange_type: typing.Union[
-            str, aio_pika.ExchangeType
-        ] = aio_pika.ExchangeType.FANOUT,
-        logger: typing.Optional[Logger] = None,
-        **kwargs,
-    ) -> ProfilesPublisher:
-        """Creates connection to Imp_prof rabbitmq queue and sets logger
-        :param host: RabbitMQ server host
-        :param port: RabbitMQ server port
-        :param user: RabbitMQ username
-        :param password: RabbitMQ user password
-        :param heartbeat:
-        :param timeout:
-        :param retry_delay:
-        :param retry:
-        :param exchange_name:
-        :param exchange_type:
-        :param logger: logger
-        """
-        self._logger = logger or logging.getLogger(__name__)
-        try:
-            self._publisher = BlockingPublisher(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                heartbeat=heartbeat,
-                timeout=timeout,
-                retry_delay=retry_delay,
-                retry=retry,
-                exchange_name=exchange_name,
-                exchange_type=exchange_type,
-                logger=logger,
-                **kwargs,
-            )
-            self._publisher.connect()
-        except AMQPConnectionError:
-            self._logger.error("ipm_prof RabbitMQ publisher cannot connect")
-            raise RuntimeError("ipm_prof RabbitMQ publisher cannot connect")
-        self._logger.info("ipm_prof RabbitMQ publisher connected")
-        self._publisher.close()
-        self._metrics["response_size"] = ResponseSize("response_size")
-        return self
-
-    def disconnect(self) -> None:
-        """disconnects the RabbitMQ and delete all metric instances"""
-        self._publisher.close()
-        # self.delete_metrics()
-
-    def delete_metric(self, item: str) -> None:
-        """deletes one metric instance"""
-        _ = self._metrics.pop(item, None)
-
-    def delete_metrics(self) -> None:
-        """deletes all metric instances"""
-        self._metrics = {}
-
-    def add_metric(self, metric: MetricWrapper) -> None:
-        """adds new metric"""
-        self._metrics[metric.item] = metric
-
-    def publish(self, record: Record) -> bool:
-        """send one record to RabbitMQ  queue"""
-        return self._publisher.publish(record)
-
-    def send_profiling(self, measure_response_size: bool = False):
-        """
-        Decorator used for automated sending of  measured records to IMP-prof
-
-        If you decorate endpoint method, all measured records will be sent to imp-prof after request.
-        If class of metric have __str__() method defined or inherit one != Object.__str__, it will be
-        logged after request. All measured records will be deleted after publishing
-        Decorate endpoint method where you want to make measurements and use with combination with
-        record_op() method.
-        :param measure_response_size: Should response size be automatically sent?
-        """
-
-        def _send_profiling(func):
-            @wraps(func)
-            def inner(ep_class, *args, **kwargs):
-                result = func(ep_class, *args, **kwargs)
-                if measure_response_size:
-                    self._metrics["response_size"].record_op("rec", str(result[0]))
-                for metric in self._metrics.values():
-                    records = metric._to_records()
-                    self._logger.debug(
-                        f"Sending records of metric: {metric.item}_{metric.metric}_{metric.units}"
-                    )
-                    for record in records:
-                        print(record)
-                        publish_res = self._publisher.publish(record)
-                        if not publish_res:
-                            self._logger.info(f"Failed to publish record")
-                    if type(metric).__str__ is not object.__str__:
-                        self._logger.info(f"{str(metric)}")
-                    metric.cleanup()
-                return result
-
-            return inner
-
-        return _send_profiling
-
-    def __getitem__(self, item: str) -> MetricWrapper:
-        return self._metrics[item]
-
-
-publisher: ProfilesPublisher = ProfilesPublisher()
+        return (
+            "profiler: "
+            + self.item
+            + ", context: "
+            + self._label_values[-1]["context"]
+            + ", value: "
+            + str(self._values[0][1])
+            + "B"
+        )
