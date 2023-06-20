@@ -63,8 +63,6 @@ class MetricWrapper:
         self._label_values = []
         self.operations = {}
         self.default_operation = ""
-        # TODO: later if more metrics should be sent
-        # publisher.add_metric(self)
 
     def _to_records(self):
         """Convert measured values into Type Record
@@ -94,7 +92,7 @@ class MetricWrapper:
             return True
         return False
 
-    def record_op(
+    def store_operation(
         self,
         operation: str = None,
         value: typing.Optional[
@@ -118,7 +116,6 @@ class MetricWrapper:
         :param kwargs: will be passed to specific operation of given metric
         :raise ValueError: if operation does not exist for given metric.
         """
-        # TODO: later when testing with endpoints
         with app.app_context():
             if self.job == "":
                 self.job = app.import_name.split(".")[0].upper()
@@ -431,7 +428,6 @@ class TimeProfiler(Histogram):
         self._start_ts = []
 
     # ############################### measurement operations -> checking labels, not sending records
-    # TODO: action???
     def _stop(self, *args, **kwargs) -> None:
         """Records time difference between last start_ts and now"""
         _ = args
@@ -484,7 +480,6 @@ class ResponseSize(Histogram):
         """records size of response"""
         _ = args
         _ = kwargs
-
         with app.app_context():
             self._observe(float(sys.getsizeof(value)))
 

@@ -1,8 +1,8 @@
 import unittest
-import metric_tests
+import test_metric
 
 
-test_classes = [metric_tests.TestTimeProfiling]
+test_classes = [test_metric.TestTimeProfiling]
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()

@@ -26,8 +26,9 @@ class MethodTree:
         """
         child.parent = self
         if self.method != "":
-            if len(self.method.split(":")) == 1:
-                self.method = self.get_class_name() + ":" + self.method
+            class_name = self.get_class_name()
+            if self.method.find(".") == -1 and self.method.find(":") == -1:
+                self.method = class_name + ":" + self.method
             child.method = self.method + "." + child.method
 
         self.children.append(child)
@@ -37,21 +38,19 @@ class MethodTree:
         """Delete first child of node"""
         _ = self.children.pop(0)
 
-    # TODO: is needed??
+    """    
     def print_postorder(self) -> None:
-        """print method names in postorder"""
+        '''print method names in postorder'''
         for child in self.children:
             child.print_postorder()
         if self.method != "":
             print(f"my method is {self.method}")
+    """
 
     # TODO: check if its working
     @staticmethod
-    def get_class_name() -> typing.Optional[str]:
+    def get_class_name() -> str:
         """get name of root class"""
         _stack = inspect.stack()
         first_func = _stack[3]
-        try:
-            return first_func[0].f_locals["self"].__class__.__name__
-        except KeyError:
-            return None
+        return first_func[0].f_locals["self"].__class__.__name__
