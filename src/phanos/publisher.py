@@ -43,13 +43,7 @@ class OutputFormatter:
             labels = ""
 
         return (
-            "profiler: "
-            + record["item"]
-            + context
-            + ", value: "
-            + str(value)
-            + record["value"]
-            + labels
+            "profiler: " + record["item"] + context + ", value: " + str(value) + labels
         )
 
 
@@ -181,11 +175,6 @@ class StreamHandler(BaseHandler):
                 print(
                     self._formatter.record_to_str(record), file=self.output, flush=True
                 )
-
-
-if __name__ == "__main__":
-    test = StreamHandler(name="test")
-    print(test.name)
 
 
 class PhanosProfiler:

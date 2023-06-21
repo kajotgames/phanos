@@ -100,10 +100,14 @@ class MetricWrapper:
         :param kwargs: will be passed to specific operation of given metric
         :raise ValueError: if operation does not exist for given metric.
         """
-        with app.app_context():
-            if self.job == "":
-                self.job = app.import_name.split(".")[0].upper()
-            self.method = request.method
+        try:
+            with app.app_context():
+                if self.job == "":
+                    self.job = app.import_name.split(".")[0].upper()
+                self.method = request.method
+        except RuntimeError:
+            self.job = ""
+            self.method = ""
 
         if label_values is None:
             label_values = {}
@@ -464,8 +468,11 @@ class ResponseSize(Histogram):
         """records size of response"""
         _ = args
         _ = kwargs
-        with app.app_context():
-            self._observe(float(sys.getsizeof(value)))
+        try:
+            with app.app_context():
+                self._observe(float(sys.getsizeof(value)))
+        except RuntimeError:
+            pass
 
     def __str__(self):
         return (

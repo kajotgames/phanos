@@ -10,7 +10,7 @@ from flask.ctx import AppContext
 from flask.testing import FlaskClient
 
 from src.phanos import profile_publisher
-from src.phanos.publisher import StrHandler, RabbitMQHandler
+from src.phanos.publisher import StreamHandler, RabbitMQHandler
 from test import testing_data
 from test.dummy_api import app
 from src.phanos.metrics import (
@@ -261,13 +261,10 @@ class TestTimeProfiling(unittest.TestCase):
 
     @patch("src.phanos.publisher.BlockingPublisher")
     def test_profiles_publish(self, BlockingPublisher):
-        handler = StrHandler()
+        handler = StreamHandler("test")
         profile_publisher.add_handler(handler)
         io = StringIO()
-        handler = StrHandler(io)
-        profile_publisher.add_handler(handler)
-
-        handler = StrHandler(profile_publisher._logger)
+        handler = StreamHandler("test1", io)
         profile_publisher.add_handler(handler)
 
         _ = self.client.get("http://localhost/api/dummy/one")

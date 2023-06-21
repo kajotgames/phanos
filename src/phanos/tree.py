@@ -52,5 +52,6 @@ class MethodTree:
     def get_class_name() -> str:
         """get name of root class"""
         _stack = inspect.stack()
+        # TODO: if not class -> module
         first_func = _stack[3]
         return first_func[0].f_locals["self"].__class__.__name__
