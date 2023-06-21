@@ -2,16 +2,17 @@
 from __future__ import annotations
 import logging
 import sys
+import threading
 import typing
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 import aio_pika
-from pika.exceptions import AMQPConnectionError
+import imp_prof.messaging.publisher
 from logging import Logger
 
 from imp_prof.messaging.publisher import BlockingPublisher
 
-from src.phanos.metrics import Record, MetricWrapper, TimeProfiler, ResponseSize
+from src.phanos.metrics import MetricWrapper, TimeProfiler, ResponseSize
 from src.phanos.tree import MethodTree
 
 
@@ -19,19 +20,59 @@ TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
 
-class AbsHandler:
+class OutputFormatter:
+    @staticmethod
+    def record_to_str(record: imp_prof.Record):
+        if isinstance(record["value"], tuple):
+            value = record["value"][1]
+        else:
+            value = record["value"]
+
+        if record.get("labels", {}).get("context") is not None:
+            context = ", context: " + record["labels"]["context"]
+            _ = record["labels"].pop("context")
+        else:
+            context = ""
+
+        if record.get("labels") is not None and len(record["labels"]) > 0:
+            labels = ",labels: "
+            for name, value in record["labels"].items():
+                labels += name + "=" + value + ", "
+            labels = labels[:-2]
+        else:
+            labels = ""
+
+        return (
+            "profiler: "
+            + record["item"]
+            + context
+            + ", value: "
+            + str(value)
+            + record["value"]
+            + labels
+        )
+
+
+class BaseHandler:
+    name: str
+
+    def __init__(self, name):
+        self.name = name
+
     @abstractmethod
-    def handle(self, records: typing.List[Record]):
-        raise NotImplementedError
+    def handle(self, records: typing.List[imp_prof.Record]):
+        pass
 
 
-class RabbitMQHandler(AbsHandler):
+class RabbitMQHandler(BaseHandler):
     """RabbitMQ Handler for Records"""
 
     _publisher: typing.Optional.BlockingPublisher
+    _logger: logging.Logger
 
     def __init__(
         self,
+        name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
         user: str = None,
@@ -62,70 +103,89 @@ class RabbitMQHandler(AbsHandler):
         :param exchange_type:
         :param logger: logger
         """
+        super().__init__(name)
+
         self._logger = logger or logging.getLogger(__name__)
+        self._publisher = BlockingPublisher(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            heartbeat=heartbeat,
+            timeout=timeout,
+            retry_delay=retry_delay,
+            retry=retry,
+            exchange_name=exchange_name,
+            exchange_type=exchange_type,
+            logger=logger,
+            **kwargs,
+        )
         try:
-            self._publisher = BlockingPublisher(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                heartbeat=heartbeat,
-                timeout=timeout,
-                retry_delay=retry_delay,
-                retry=retry,
-                exchange_name=exchange_name,
-                exchange_type=exchange_type,
-                logger=logger,
-                **kwargs,
-            )
             self._publisher.connect()
-        except AMQPConnectionError:
-            self._logger.error("ipm_prof RabbitMQ publisher cannot connect")
-            raise RuntimeError("ipm_prof RabbitMQ publisher cannot connect")
-        self._logger.info("ipm_prof RabbitMQ publisher connected")
+        except imp_prof.messaging.publisher.NETWORK_ERRORS as e:
+            self._logger.error(
+                f"RabbitMQHandler cannot connect to RabbitMQ because of {e}"
+            )
+            raise RuntimeError("Cannot connect to RabbitMQ")
+        self._logger.info("RabbitMQHandler created successfully")
         self._publisher.close()
 
-    # TODO: need this?
-    def disconnect(self) -> None:
-        """disconnects from RabbitMQ"""
-        self._publisher.close()
+    def reconnect(self, silent: bool = False) -> None:
+        """Force reconnect RabbitMQ"""
+        self._publisher.reconnect(silent)
 
-    # TODO: log unsuccessfull publish
-    def handle(self, records: typing.List[Record]):
+    def handle(self, records: typing.List[imp_prof.Record]):
         for record in records:
-            published = self._publisher.publish(record)
-            print(f"imp-prof: {record}")
-            if not published:
-                print("was not published")
+            _ = self._publisher.publish(record)
 
 
-# TODO: typing, files?
-#       FileHandler?
-class StrHandler(AbsHandler):
+class LoggerHandler(BaseHandler):
+    _logger: logging.Logger
+    _formatter: OutputFormatter
+    level: int
+
+    def __init__(self, name, logger: logging.Logger = None, level: int = 10):
+        super().__init__(name)
+        if logger is not None:
+            self._logger = logger
+        else:
+            self._logger = logging.getLogger(__name__)  # ???
+            self._logger.setLevel(10)
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(10)
+            self._logger.addHandler(handler)
+        self.level = level
+        self._formatter = OutputFormatter()
+
+    def handle(self, records: typing.List[imp_prof.Record]):
+        for record in records:
+            self._logger.log(self.level, self._formatter.record_to_str(record))
+
+
+class StreamHandler(BaseHandler):
     """String handler of Records."""
 
-    def __init__(self, output: typing.TextIO = sys.stdout):
+    _formatter: OutputFormatter
+    output: typing.TextIO
+    _lock: threading.Lock
+
+    def __init__(self, name, output: typing.TextIO = sys.stdout):
+        super().__init__(name)
         self.output = output
+        self._formatter = OutputFormatter()
+        self._lock = threading.Lock()
 
-    # TODO: format output
-    def handle(self, records: typing.List[Record]):
+    def handle(self, records: typing.List[imp_prof.Record]):
         for record in records:
-            print(record, file=self.output)
+            with self._lock:
+                print(
+                    self._formatter.record_to_str(record), file=self.output, flush=True
+                )
 
 
-class LoggerHandler(AbsHandler):
-    def __init__(self, logger: logging.Logger, level: int = 10):
-        pass
-
-    def handle(self, records: typing.List[Record]):
-        # TODO: write by level
-        pass
-
-
-# TODO: Do not need.
-class VoidHandler(AbsHandler):
-    def handle(self, records: typing.List[Record]):
-        pass
+if __name__ == "__main__":
+    test = StreamHandler(name="test")
+    print(test.name)
 
 
 class PhanosProfiler:
@@ -145,7 +205,7 @@ class PhanosProfiler:
     before_root_func: typing.Optional[typing.Callable]
     after_root_func: typing.Optional[typing.Callable]
 
-    _handlers: typing.List[AbsHandler]
+    _handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
 
     def __init__(
@@ -163,7 +223,7 @@ class PhanosProfiler:
 
         self._logger = logger or logging.getLogger(__name__)
         self._metrics = {}
-        self._handlers = []
+        self._handlers = {}
 
         self.request_size_profile = None
         self.time_profile = None
@@ -209,7 +269,7 @@ class PhanosProfiler:
         :param rm_time_profile: should pre created time_profiler be deleted
         :param rm_resp_size_profile: should pre created response_size_profiler be deleted
         """
-        self._metrics = {}
+        self._metrics.clear()
         if rm_time_profile:
             self.time_profile = None
         if rm_resp_size_profile:
@@ -219,13 +279,15 @@ class PhanosProfiler:
         """adds new metric"""
         self._metrics[metric.item] = metric
 
-    def add_handler(self, handler: AbsHandler):
+    def add_handler(self, handler: BaseHandler):
         """Add handler to profiler"""
-        self._handlers.append(handler)
+        self._handlers[handler.name] = handler
 
-    # TODO: todo
-    def delete_handlers(self, handler: AbsHandler):
-        self._handlers = []
+    def delete_handler(self, handler_name: str) -> None:
+        _ = self._handlers.pop(handler_name, None)
+
+    def delete_handlers(self):
+        self._handlers.clear()
 
     def profile(self, func):
         """
@@ -260,7 +322,7 @@ class PhanosProfiler:
 
         return inner
 
-    # TODO: check this, maybe edit
+    # TODO: check this later, maybe edit
     def _before_root_func(self, function: typing.Callable):
         # custom
         if callable(self.before_root_func):
@@ -303,6 +365,6 @@ class PhanosProfiler:
         # send records and log em
         for metric in self._metrics.values():
             records = metric._to_records()
-            for handler in self._handlers:
+            for handler in self._handlers.values():
                 handler.handle(records)
             metric.cleanup()
