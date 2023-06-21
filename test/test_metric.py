@@ -11,7 +11,7 @@ from flask.testing import FlaskClient
 
 from src.phanos import profile_publisher
 from src.phanos.publisher import StreamHandler, RabbitMQHandler
-from test import testing_data
+from test import testing_data, dummy_api
 from test.dummy_api import app
 from src.phanos.metrics import (
     Histogram,
@@ -269,8 +269,8 @@ class TestTimeProfiling(unittest.TestCase):
 
         _ = self.client.get("http://localhost/api/dummy/one")
 
-        io.seek(0)
-        print(io.readline())
+        # io.seek(0)
+        # print(io.readline())
 
     @patch("src.phanos.publisher.BlockingPublisher")
     def test_custom_profile_addition(self, BlockingPublisher):

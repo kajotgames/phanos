@@ -1,3 +1,5 @@
+from abc import abstractmethod
+from functools import partial
 from time import sleep
 
 
@@ -9,9 +11,19 @@ from src.phanos import profile_publisher
 ns = Namespace("dummy")
 
 
+@staticmethod
+@profile_publisher.profile
+def no_class():
+    sleep(0.2)
+
+
+g = partial(no_class)
+
+
 class DummyDbAccess:
+    @classmethod
     @profile_publisher.profile
-    def first_access(self):
+    def first_access(cls):
         sleep(0.2)
 
     @profile_publisher.profile

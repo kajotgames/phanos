@@ -106,7 +106,9 @@ class MetricWrapper:
                     self.job = app.import_name.split(".")[0].upper()
                 self.method = request.method
         except RuntimeError:
+            # TODO: job as project name
             self.job = ""
+            # TODO: method as none?
             self.method = ""
 
         if label_values is None:

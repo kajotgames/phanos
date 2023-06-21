@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import inspect
 import typing
 
@@ -9,28 +10,31 @@ class MethodTree:
 
     parent: typing.Optional[MethodTree]
     children: typing.List[MethodTree]
-    method: str
+    method: typing.Optional[typing.Callable]
+    class_: typing.Optional[str]
+    context: str
 
-    def __init__(self, method: typing.Union[str, typing.Callable]) -> None:
+    def __init__(self, method: typing.Optional[str, typing.Callable] = None) -> None:
         self.children = []
-        if isinstance(method, str):
-            self.method = method
-        else:
-            self.method = method.__name__
         self.parent = None
 
-    # TODO: class name for all methods?
+        self.context = ""
+        if method is not None:
+            self.method = method
+            self.context = method.__name__
+
     def add_child(self, child: MethodTree) -> MethodTree:
         """Add child to method tree node
         :param child: child to be inserted
         """
         child.parent = self
-        if self.method != "":
-            class_name = self.get_class_name()
-            if self.method.find(".") == -1 and self.method.find(":") == -1:
-                self.method = class_name + ":" + self.method
-            child.method = self.method + "." + child.method
-
+        if self.context != "":
+            child.context = self.context + "." + child.context
+        else:
+            child.context = (
+                self.get_method_class(child.method).__name__ + ":" + child.context
+            )
+        print(child.context)
         self.children.append(child)
         return child
 
@@ -38,20 +42,31 @@ class MethodTree:
         """Delete first child of node"""
         _ = self.children.pop(0)
 
-    """    
-    def print_postorder(self) -> None:
-        '''print method names in postorder'''
-        for child in self.children:
-            child.print_postorder()
-        if self.method != "":
-            print(f"my method is {self.method}")
-    """
+    def get_method_class(self, meth):
+        """
+        neresi: partial, lambda
+        resi: static, mimo classu, abstract,
+        kdyz: class method -> tak prve classmethod pak profiling
 
-    # TODO: check if its working
-    @staticmethod
-    def get_class_name() -> str:
-        """get name of root class"""
-        _stack = inspect.stack()
-        # TODO: if not class -> module
-        first_func = _stack[3]
-        return first_func[0].f_locals["self"].__class__.__name__
+        :param meth:
+        :return:
+        """
+        if inspect.ismethod(meth):
+            for cls in inspect.getmro(meth.__self__.__class__):
+                if meth.__name__ in cls.__dict__:
+                    return cls
+            meth = getattr(meth, "__func__", meth)  # fallback to __qualname__ parsing
+        if inspect.isfunction(meth):
+            cls = getattr(
+                inspect.getmodule(meth),
+                meth.__qualname__.split(".<locals>", 1)[0].rsplit(".", 1)[0],
+                None,
+            )
+            if isinstance(cls, type):
+                return cls
+        class_ = getattr(
+            meth, "__objclass__", None
+        )  # handle special descriptor objects
+        if class_ is not None:
+            return class_
+        return inspect.getmodule(meth)

@@ -27,7 +27,6 @@ class OutputFormatter:
             value = record["value"][1]
         else:
             value = record["value"]
-
         if record.get("labels", {}).get("context") is not None:
             context = ", context: " + record["labels"]["context"]
             _ = record["labels"].pop("context")
@@ -222,7 +221,7 @@ class PhanosProfiler:
         if request_size_profile:
             self.create_response_size_profiler()
 
-        self._root = MethodTree("")
+        self._root = MethodTree()
         self._current_node = self._root
 
         self.before_func = None
@@ -324,7 +323,7 @@ class PhanosProfiler:
             self.resp_size_profile.store_operation(
                 operation="rec",
                 value=fn_result,
-                label_values={"context": self._current_node.method},
+                label_values={"context": self._current_node.context},
             )
         # user custom function
         if callable(self.after_root_func):
@@ -342,7 +341,7 @@ class PhanosProfiler:
         # mine
         if self.time_profile:
             self.time_profile.store_operation(
-                operation="stop", label_values={"context": self._current_node.method}
+                operation="stop", label_values={"context": self._current_node.context}
             )
         # custom
         if callable(self.after_func):
