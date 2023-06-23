@@ -3,16 +3,18 @@ import unittest
 from io import StringIO
 import sys
 import ast
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock, Mock
 
 from flask import Flask
 from flask.ctx import AppContext
 from flask.testing import FlaskClient
+from imp_prof.messaging.publisher import BlockingPublisher
 
-from src.phanos import profile_publisher
-from src.phanos.publisher import StreamHandler, RabbitMQHandler
+from src.phanos import profile_publisher, publisher
+from src.phanos.publisher import StreamHandler, RabbitMQHandler, LoggerHandler
+from src.phanos.tree import MethodTree
 from test import testing_data, dummy_api
-from test.dummy_api import app
+from test.dummy_api import app, no_class, dummy_method, DummyResource, DummyDbAccess
 from src.phanos.metrics import (
     Histogram,
     Summary,
@@ -21,6 +23,121 @@ from src.phanos.metrics import (
     Gauge,
     Enum,
 )
+
+
+def side_effect_func(record, *args, **kwargs):
+    print("bitch")
+    return record
+
+
+config = {
+    "BlockingPublisher.return_value": "self",
+    "publish.side_effect": "side_effect_func",
+}
+
+
+class TestTree(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        pass
+
+    def tearDown(self) -> None:
+        pass
+
+    def test_tree(self):
+        root = MethodTree()
+        # classmethod
+        first = MethodTree(self.setUpClass)
+        root.add_child(first)
+        self.assertEqual(first.parent, root)
+        self.assertEqual(root.children, [first])
+        self.assertEqual(first.context, "TestTree:setUpClass")
+        root.delete_child()
+        self.assertEqual(root.children, [])
+        self.assertEqual(first.parent, None)
+        # method
+        first = MethodTree(self.tearDown)
+        root.add_child(first)
+        self.assertEqual(first.context, "TestTree:tearDown")
+        root.delete_child()
+        # function
+        first = MethodTree(dummy_method)
+        root.add_child(first)
+        self.assertEqual(first.context, "dummy_api:dummy_method")
+        root.delete_child()
+        # descriptor
+        access = DummyDbAccess()
+        first = MethodTree(access.__getattribute__)
+        root.add_child(first)
+        self.assertEqual(first.context, "object:__getattribute__")
+        root.delete_child()
+        # staticmethod
+        first = MethodTree(access.test_static)
+        root.add_child(first)
+        self.assertEqual(first.context, "DummyDbAccess:test_static")
+        root.delete_child()
+
+
+class TestHandlers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.publisher = MagicMock()
+        cls.publisher._publish.return_value = 2
+
+    def tearDown(self) -> None:
+        pass
+
+    def test_stream_handler(self):
+        output = StringIO()
+        str_handler = StreamHandler("str_handler", output)
+        str_handler.handle("test_name", testing_data.test_handler_in)
+        str_handler.handle("test_name", testing_data.test_handler_in_no_lbl)
+        output.seek(0)
+        self.assertEqual(
+            output.read(),
+            testing_data.test_handler_out + testing_data.test_handler_out_no_lbl,
+        )
+
+    def test_log_handler(self):
+        tmp = sys.stdout
+        output = StringIO()
+        sys.stdout = output
+        logger = logging.getLogger()
+        logger.setLevel(10)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(10)
+        logger.addHandler(handler)
+        log_handler = LoggerHandler("log_handler", logger)
+        log_handler.handle("test_name", testing_data.test_handler_in)
+        output.seek(0)
+        result = output.read()
+        self.assertEqual(result, testing_data.test_handler_out)
+        log_handler = LoggerHandler("log_handler1")
+        self.assertEqual(log_handler, log_handler)
+        output.seek(0)
+        result = output.read()
+        self.assertEqual(result, testing_data.test_handler_out)
+        sys.stdout = tmp
+
+    def test_handlers_management(self):
+        length = len(profile_publisher._handlers)
+        log1 = LoggerHandler("log_handler1")
+        profile_publisher.add_handler(log1)
+        log2 = LoggerHandler("log_handler2")
+        profile_publisher.add_handler(log2)
+        self.assertEqual(len(profile_publisher._handlers), length + 2)
+        profile_publisher.delete_handler("log_handler1")
+        self.assertEqual(profile_publisher._handlers.get("log_handler1"), None)
+        profile_publisher.delete_handlers()
+        self.assertEqual(profile_publisher._handlers, {})
+
+    @patch(
+        "src.phanos.publisher.BlockingPublisher",
+    )
+    def test_rabbit_handler(self, BlockingPublisher):
+        handler = RabbitMQHandler("rabbit")
+        resp = handler.handle(testing_data.test_handler_in)
+        print(resp)
 
 
 class TestTimeProfiling(unittest.TestCase):
@@ -36,6 +153,29 @@ class TestTimeProfiling(unittest.TestCase):
     def tearDown(self) -> None:
         pass
 
+    def test_metric_management(self):
+        length = len(profile_publisher._metrics)
+        hist = Histogram("name", "units")
+        profile_publisher.add_metric(hist)
+        hist1 = Histogram("name1", "units")
+        profile_publisher.add_metric(hist1)
+        self.assertEqual(len(profile_publisher._metrics), length + 2)
+        profile_publisher.delete_metric("name")
+        self.assertEqual(len(profile_publisher._metrics), length + 1)
+        self.assertEqual(profile_publisher._metrics.get("name"), None)
+        profile_publisher.delete_metric(publisher.TIME_PROFILER)
+        self.assertEqual(profile_publisher._metrics.get(publisher.TIME_PROFILER), None)
+        self.assertEqual(profile_publisher.time_profile, None)
+        profile_publisher.delete_metrics()
+        self.assertEqual(len(profile_publisher._metrics), 1)
+        self.assertIsNotNone(profile_publisher.resp_size_profile, None)
+        self.assertIsNotNone(profile_publisher._metrics.get(publisher.RESPONSE_SIZE))
+        profile_publisher.delete_metrics(
+            rm_time_profile=True, rm_resp_size_profile=True
+        )
+        self.assertEqual(profile_publisher._metrics, {})
+        self.assertEqual(profile_publisher._metrics.get(publisher.RESPONSE_SIZE), None)
+
     def test_histogram(self):
         with app.test_request_context():
             hist_no_lbl = Histogram(
@@ -47,6 +187,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 hist_no_lbl.store_operation,
                 "observe",
+                "test:method",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -55,6 +196,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 hist_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 2.0,
             )
             # invalid value
@@ -62,10 +204,11 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 hist_no_lbl.store_operation,
                 "observe",
+                "test:method",
                 "asd",
             )
             # valid operation
-            hist_no_lbl.store_operation("observe", 2.0),
+            hist_no_lbl.store_operation("observe", "test:method", 2.0),
             self.assertEqual(hist_no_lbl._to_records(), testing_data.hist_no_lbl)
 
             hist_w_lbl = Histogram("hist_w_lbl", "V", labels=["test"])
@@ -75,11 +218,14 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 hist_w_lbl.store_operation,
                 "observe",
+                "test:method",
                 2.0,
             )
 
             # default operation
-            hist_w_lbl.store_operation(value=2.0, label_values={"test": "test"})
+            hist_w_lbl.store_operation(
+                method="test:method", value=2.0, label_values={"test": "test"}
+            )
             self.assertEqual(hist_w_lbl._to_records(), testing_data.hist_w_lbl)
 
     def test_summary(self):
@@ -93,6 +239,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 sum_no_lbl.store_operation,
                 "observe",
+                "test:method",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -101,6 +248,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 sum_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 2.0,
             )
             # invalid value
@@ -108,10 +256,11 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 sum_no_lbl.store_operation,
                 "observe",
+                "test:method",
                 "asd",
             )
             # valid operation
-            sum_no_lbl.store_operation("observe", 2.0),
+            sum_no_lbl.store_operation("observe", "test:method", 2.0),
             self.assertEqual(sum_no_lbl._to_records(), testing_data.sum_no_lbl)
 
     def test_counter(self):
@@ -125,6 +274,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 cnt_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -133,6 +283,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 cnt_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 "asd",
             )
             # invalid value
@@ -140,6 +291,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 cnt_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 -1,
             )
             # invalid operation
@@ -147,11 +299,12 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 cnt_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 2.0,
             )
 
             # valid operation
-            cnt_no_lbl.store_operation("inc", 2.0),
+            cnt_no_lbl.store_operation("inc", "test:method", 2.0),
             self.assertEqual(cnt_no_lbl._to_records(), testing_data.cnt_no_lbl)
 
     def test_info(self):
@@ -164,6 +317,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 inf_no_lbl.store_operation,
                 "info",
+                "test:method",
                 "asd",
             )
             # invalid operation
@@ -171,11 +325,12 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 inf_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 2.0,
             )
 
             # valid operation
-            inf_no_lbl.store_operation("info", {"value": "asd"}),
+            inf_no_lbl.store_operation("info", "test:method", {"value": "asd"}),
             self.assertEqual(inf_no_lbl._to_records(), testing_data.inf_no_lbl)
 
     def test_gauge(self):
@@ -189,6 +344,7 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 gauge_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -197,6 +353,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 gauge_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 "asd",
             )
             # invalid value
@@ -204,6 +361,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 gauge_no_lbl.store_operation,
                 "inc",
+                "test:method",
                 -1,
             )
             # invalid value
@@ -211,6 +369,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 gauge_no_lbl.store_operation,
                 "dec",
+                "test:method",
                 -1,
             )
             # invalid value
@@ -218,6 +377,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 gauge_no_lbl.store_operation,
                 "set",
+                "test:method",
                 False,
             )
             # invalid operation
@@ -225,13 +385,14 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 gauge_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 2.0,
             )
 
             # valid operation
-            gauge_no_lbl.store_operation("inc", 2.0),
-            gauge_no_lbl.store_operation("dec", 2.0),
-            gauge_no_lbl.store_operation("set", 2.0),
+            gauge_no_lbl.store_operation("inc", "test:method", 2.0),
+            gauge_no_lbl.store_operation("dec", "test:method", 2.0),
+            gauge_no_lbl.store_operation("set", "test:method", 2.0),
             self.assertEqual(gauge_no_lbl._to_records(), testing_data.gauge_no_lbl)
 
     def test_enum(self):
@@ -245,6 +406,7 @@ class TestTimeProfiling(unittest.TestCase):
                 TypeError,
                 enum_no_lbl.store_operation,
                 "state",
+                "test:method",
                 "maybe",
             )
             # invalid operation
@@ -252,16 +414,17 @@ class TestTimeProfiling(unittest.TestCase):
                 ValueError,
                 enum_no_lbl.store_operation,
                 "nonexistent",
+                "test:method",
                 "true",
             )
 
             # valid operation
-            enum_no_lbl.store_operation("state", "true")
+            enum_no_lbl.store_operation("state", "test", "true")
             self.assertEqual(enum_no_lbl._to_records(), testing_data.enum_no_lbl)
 
     @patch("src.phanos.publisher.BlockingPublisher")
     def test_profiles_publish(self, BlockingPublisher):
-        handler = StreamHandler("test")
+        handler = StreamHandler("test:method")
         profile_publisher.add_handler(handler)
         io = StringIO()
         handler = StreamHandler("test1", io)

@@ -5,22 +5,27 @@ from time import sleep
 
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
+from jinja2.nodes import Test
 
 from src.phanos import profile_publisher
 
 ns = Namespace("dummy")
 
 
-@staticmethod
+def dummy_method():
+    pass
+
+
 @profile_publisher.profile
 def no_class():
     sleep(0.2)
 
 
-g = partial(no_class)
-
-
 class DummyDbAccess:
+    @staticmethod
+    def test_static():
+        pass
+
     @classmethod
     @profile_publisher.profile
     def first_access(cls):
@@ -43,9 +48,14 @@ class DummyResource(Resource):
         return {"success": True}, 201
 
 
-app = Flask(__name__)
+app = Flask("TEST")
 api = Api(
     app,
     prefix="/api",
 )
 api.add_namespace(ns)
+
+if __name__ == "__main__":
+    # no_class()
+    dummy = DummyDbAccess()
+    dummy.first_access()

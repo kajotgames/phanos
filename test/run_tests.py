@@ -2,7 +2,11 @@ import unittest
 import test_metric
 
 
-test_classes = [test_metric.TestTimeProfiling]
+test_classes = [
+    test_metric.TestTimeProfiling,
+    test_metric.TestHandlers,
+    test_metric.TestTree,
+]
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()

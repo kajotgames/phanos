@@ -1,59 +1,86 @@
 resp_size_out = {
-    "item": "response_size",
+    "item": "DummyResource",
     "metric": "histogram",
     "units": "B",
     "job": "TEST",
-    "method": "GET",
-    "labels": {"context": "DummyResource:get"},
+    "method": "DummyResource:get",
+    "labels": {},
     "value": ("observe", 56.0),
 }
 
 time_profile_out = [
     {
-        "item": "time_profiler",
+        "item": "DummyResource",
         "metric": "histogram",
         "units": "mS",
         "job": "TEST",
-        "method": "GET",
-        "labels": {"context": "DummyResource:get.first_access"},
+        "method": "DummyResource:get.first_access",
+        "labels": {},
         "value": ("observe", 2.0),
     },
     {
-        "item": "time_profiler",
+        "item": "DummyResource",
         "metric": "histogram",
         "units": "mS",
         "job": "TEST",
-        "method": "GET",
-        "labels": {"context": "DummyResource:get.second_access.first_access"},
+        "method": "DummyResource:get.second_access.first_access",
+        "labels": {},
         "value": ("observe", 2.0),
     },
     {
-        "item": "time_profiler",
+        "item": "DummyResource",
         "metric": "histogram",
         "units": "mS",
         "job": "TEST",
-        "method": "GET",
-        "labels": {"context": "DummyResource:get.second_access"},
+        "method": "DummyResource:get.second_access",
+        "labels": {},
         "value": ("observe", 5.0),
     },
     {
-        "item": "time_profiler",
+        "item": "DummyResource",
         "metric": "histogram",
         "units": "mS",
         "job": "TEST",
-        "method": "GET",
-        "labels": {"context": "DummyResource:get"},
+        "method": "DummyResource:get",
+        "labels": {},
         "value": ("observe", 7.0),
     },
 ]
 
+test_handler_in = (
+    {
+        "item": "DummyResource",
+        "metric": "histogram",
+        "units": "mS",
+        "job": "TEST",
+        "method": "DummyResource:get.first_access",
+        "labels": {"test": "value"},
+        "value": ("observe", 2.0),
+    },
+)
+test_handler_in_no_lbl = (
+    {
+        "item": "DummyResource",
+        "metric": "histogram",
+        "units": "mS",
+        "job": "TEST",
+        "method": "DummyResource:get.first_access",
+        "labels": {},
+        "value": ("observe", 2.0),
+    },
+)
+test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test = value\n"
+test_handler_out_no_lbl = (
+    "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS\n"
+)
+
 hist_no_lbl = [
     {
-        "item": "hist_no_lbl",
+        "item": "test",
         "metric": "histogram",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("observe", 2.0),
     }
@@ -61,11 +88,11 @@ hist_no_lbl = [
 
 hist_w_lbl = [
     {
-        "item": "hist_w_lbl",
+        "item": "test",
         "metric": "histogram",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {"test": "test"},
         "value": ("observe", 2.0),
     }
@@ -73,11 +100,11 @@ hist_w_lbl = [
 
 sum_no_lbl = [
     {
-        "item": "sum_no_lbl",
+        "item": "test",
         "metric": "summary",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("observe", 2.0),
     }
@@ -85,11 +112,11 @@ sum_no_lbl = [
 
 cnt_no_lbl = [
     {
-        "item": "cnt_no_lbl",
+        "item": "test",
         "metric": "counter",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("inc", 2.0),
     }
@@ -97,11 +124,11 @@ cnt_no_lbl = [
 
 inf_no_lbl = [
     {
-        "item": "inf_no_lbl",
+        "item": "test",
         "metric": "info",
         "units": "info",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("info", {"value": "asd"}),
     }
@@ -109,29 +136,29 @@ inf_no_lbl = [
 
 gauge_no_lbl = [
     {
-        "item": "gauge_no_lbl",
+        "item": "test",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("inc", 2.0),
     },
     {
-        "item": "gauge_no_lbl",
+        "item": "test",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("dec", 2.0),
     },
     {
-        "item": "gauge_no_lbl",
+        "item": "test",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("set", 2.0),
     },
@@ -139,11 +166,11 @@ gauge_no_lbl = [
 
 enum_no_lbl = [
     {
-        "item": "enum_no_lbl",
+        "item": "test",
         "metric": "enum",
         "units": "enum",
         "job": "TEST",
-        "method": "GET",
+        "method": "test:method",
         "labels": {},
         "value": ("state", "true"),
     }

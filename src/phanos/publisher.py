@@ -21,44 +21,60 @@ RESPONSE_SIZE = "response_size"
 
 
 class OutputFormatter:
-    @staticmethod
-    def record_to_str(record: imp_prof.Record):
-        if isinstance(record["value"], tuple):
-            value = record["value"][1]
-        else:
-            value = record["value"]
-        if record.get("labels", {}).get("context") is not None:
-            context = ", context: " + record["labels"]["context"]
-            _ = record["labels"].pop("context")
-        else:
-            context = ""
+    """class for converting Record type into profiling string"""
 
+    @staticmethod
+    def record_to_str(name: str, record: imp_prof.Record):
+        """converts Record type into profiling string
+
+        :param name: name of profiler
+        :param record: metric record which to convert
+        """
+        value = record["value"][1]
         if record.get("labels") is not None and len(record["labels"]) > 0:
-            labels = ",labels: "
-            for name, value in record["labels"].items():
-                labels += name + "=" + value + ", "
+            labels = ", labels: "
+            for label_name, label_value in record["labels"].items():
+                labels += label_name + " = " + label_value + ", "
             labels = labels[:-2]
         else:
             labels = ""
 
         return (
-            "profiler: " + record["item"] + context + ", value: " + str(value) + labels
+            "profiler: "
+            + name
+            + ", method: "
+            + record.get("method")
+            + ", value: "
+            + str(value)
+            + " "
+            + record.get("units")
+            + labels
         )
 
 
 class BaseHandler:
+    """ " base class for record handling"""
+
     name: str
 
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
+        """
+        :param: name of profiler"""
         self.name = name
 
     @abstractmethod
-    def handle(self, records: typing.List[imp_prof.Record]):
-        pass
+    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+        """
+        method for handling records
+
+        :param name: name of profiler
+        :param records: list of records to handle
+        """
+        raise NotImplementedError
 
 
 class RabbitMQHandler(BaseHandler):
-    """RabbitMQ Handler for Records"""
+    """RabbitMQ record handler"""
 
     _publisher: typing.Optional.BlockingPublisher
     _logger: logging.Logger
@@ -84,6 +100,7 @@ class RabbitMQHandler(BaseHandler):
         """Creates BlockingPublisher instance (connection not established yet),
          sets logger and create time profiler and response size profiler
 
+        :param name: name of profiler
         :param host: RabbitMQ server host
         :param port: RabbitMQ server port
         :param user: RabbitMQ username
@@ -124,25 +141,47 @@ class RabbitMQHandler(BaseHandler):
         self._publisher.close()
 
     def reconnect(self, silent: bool = False) -> None:
-        """Force reconnect RabbitMQ"""
+        """Force reconnect RabbitMQ
+
+        :param silent: should rise error if occur
+        """
         self._publisher.reconnect(silent)
 
-    def handle(self, records: typing.List[imp_prof.Record]):
+    def handle(
+        self,
+        name: str = None,
+        records: typing.Optional[typing.List[imp_prof.Record]] = None,
+    ) -> None:
+        """Sends list of records to rabitMq queue
+
+        :param name: name of profiler
+        :param records: list of records to publish
+        """
+        if records is None:
+            records = []
         for record in records:
             _ = self._publisher.publish(record)
 
 
 class LoggerHandler(BaseHandler):
+    """logger handler"""
+
     _logger: logging.Logger
     _formatter: OutputFormatter
     level: int
 
-    def __init__(self, name, logger: logging.Logger = None, level: int = 10):
+    def __init__(self, name, logger: logging.Logger = None, level: int = 10) -> None:
+        """
+
+        :param name: name of profiler
+        :param logger: logger instance if none -> creates new with name PHANOS
+        :param level: level of logger in which prints records. default is DEBUG
+        """
         super().__init__(name)
         if logger is not None:
             self._logger = logger
         else:
-            self._logger = logging.getLogger(__name__)  # ???
+            self._logger = logging.getLogger("PHANOS")
             self._logger.setLevel(10)
             handler = logging.StreamHandler(sys.stdout)
             handler.setLevel(10)
@@ -150,29 +189,46 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self._formatter = OutputFormatter()
 
-    def handle(self, records: typing.List[imp_prof.Record]):
+    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+        """logs list of records
+
+        :param name: name of profiler
+        :param records: list of records
+        """
         for record in records:
-            self._logger.log(self.level, self._formatter.record_to_str(record))
+            self._logger.log(self.level, self._formatter.record_to_str(name, record))
 
 
 class StreamHandler(BaseHandler):
-    """String handler of Records."""
+    """Stream handler of Records."""
 
     _formatter: OutputFormatter
     output: typing.TextIO
     _lock: threading.Lock
 
-    def __init__(self, name, output: typing.TextIO = sys.stdout):
+    def __init__(self, name, output: typing.TextIO = sys.stdout) -> None:
+        """
+
+        :param name: name of profiler
+        :param output: stream output. Default sys.stdout
+        """
         super().__init__(name)
         self.output = output
         self._formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, records: typing.List[imp_prof.Record]):
+    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+        """logs list of records
+
+        :param name: name of profiler
+        :param records: list of records
+        """
         for record in records:
             with self._lock:
                 print(
-                    self._formatter.record_to_str(record), file=self.output, flush=True
+                    self._formatter.record_to_str(name, record),
+                    file=self.output,
+                    flush=True,
                 )
 
 
@@ -188,10 +244,10 @@ class PhanosProfiler:
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
 
-    before_func: typing.Optional[typing.Callable]
-    after_func: typing.Optional[typing.Callable]
-    before_root_func: typing.Optional[typing.Callable]
-    after_root_func: typing.Optional[typing.Callable]
+    before_func: typing.Optional[callable]
+    after_func: typing.Optional[callable]
+    before_root_func: typing.Optional[callable]
+    after_root_func: typing.Optional[callable]
 
     _handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
@@ -207,6 +263,11 @@ class PhanosProfiler:
 
         Initialization just creates new instance!!
         for BlockingPublisher initialization call create_publisher(args)
+
+        :param logger: logger instance
+        :param time_profile: should create instance time profiler
+        :param request_size_profile: shoud create instance of request size profiler
+        :param handle_records: should handle recorded records
         """
 
         self._logger = logger or logging.getLogger(__name__)
@@ -233,16 +294,18 @@ class PhanosProfiler:
 
     def create_time_profiler(self):
         """Create time profiling metric"""
-        self.time_profile = TimeProfiler(TIME_PROFILER, labels=["context"])
+        self.time_profile = TimeProfiler(TIME_PROFILER)
         self.add_metric(self.time_profile)
 
     def create_response_size_profiler(self):
         """create response size profiling metric"""
-        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, labels=["context"])
+        self.resp_size_profile = ResponseSize(RESPONSE_SIZE)
         self.add_metric(self.resp_size_profile)
 
     def delete_metric(self, item: str) -> None:
-        """deletes one metric instance"""
+        """deletes one metric instance
+        :param item: name of the metric instance
+        """
         _ = self._metrics.pop(item, None)
         if item == "time_profiler":
             self.time_profile = None
@@ -257,36 +320,55 @@ class PhanosProfiler:
         :param rm_time_profile: should pre created time_profiler be deleted
         :param rm_resp_size_profile: should pre created response_size_profiler be deleted
         """
-        self._metrics.clear()
+        names = list(self._metrics.keys())
+        for name in names:
+            if (name != TIME_PROFILER or rm_time_profile) and (
+                name != RESPONSE_SIZE or rm_resp_size_profile
+            ):
+                _ = self._metrics.pop(name, None)
+
         if rm_time_profile:
             self.time_profile = None
         if rm_resp_size_profile:
             self.resp_size_profile = None
 
     def add_metric(self, metric: MetricWrapper) -> None:
-        """adds new metric"""
-        self._metrics[metric.item] = metric
+        """adds new metric to profiling
 
-    def add_handler(self, handler: BaseHandler):
-        """Add handler to profiler"""
+        :param metric: metric instance
+        """
+        self._metrics[metric.name] = metric
+
+    def add_handler(self, handler: BaseHandler) -> None:
+        """Add handler to profiler
+
+        :param handler: handler instance
+        """
         self._handlers[handler.name] = handler
 
     def delete_handler(self, handler_name: str) -> None:
+        """Delete handler from profiler
+
+        :param handler_name: name of handler:
+        """
         _ = self._handlers.pop(handler_name, None)
 
-    def delete_handlers(self):
+    def delete_handlers(self) -> None:
+        """delete all handlers"""
         self._handlers.clear()
 
-    def profile(self, func):
+    def profile(self, func: callable) -> callable:
         """
         Decorator specifying which methods should be profiled.
         Default profiler is time profiler which measures execution time of decorated methods
 
         Usage: decorate methods which you want to be profiled
+
+        :param func: method or function which should be profiled
         """
 
         # TODO: check this with own metric
-        def inner(*args, **kwargs):
+        def inner(*args, **kwargs) -> typing.Any:
             if self._handlers != [] and self.handle_records:
                 if self._current_node.parent == self._root:
                     self._before_root_func(func)
@@ -311,19 +393,29 @@ class PhanosProfiler:
         return inner
 
     # TODO: check this later, maybe edit
-    def _before_root_func(self, function: typing.Callable):
+    def _before_root_func(self, function: callable) -> None:
+        """method executing before root function
+
+        :param function: root function
+        """
         # custom
         if callable(self.before_root_func):
             self.before_root_func(function=function)
         # here mine if needed
 
-    def _after_root_func(self, fn_result):
+    def _after_root_func(self, fn_result: typing.Any) -> None:
+        """method executing after the root function
+
+
+        :param fn_result: result of function
+        """
         # mine
         if self.resp_size_profile:
             self.resp_size_profile.store_operation(
                 operation="rec",
+                method=self._current_node.context,
                 value=fn_result,
-                label_values={"context": self._current_node.context},
+                label_values={},
             )
         # user custom function
         if callable(self.after_root_func):
@@ -341,7 +433,7 @@ class PhanosProfiler:
         # mine
         if self.time_profile:
             self.time_profile.store_operation(
-                operation="stop", label_values={"context": self._current_node.context}
+                operation="stop", method=self._current_node.context, label_values={}
             )
         # custom
         if callable(self.after_func):
@@ -354,5 +446,5 @@ class PhanosProfiler:
         for metric in self._metrics.values():
             records = metric._to_records()
             for handler in self._handlers.values():
-                handler.handle(records)
+                handler.handle(metric.name, records)
             metric.cleanup()

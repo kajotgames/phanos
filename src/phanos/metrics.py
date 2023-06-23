@@ -4,15 +4,16 @@ import sys
 import typing
 from datetime import datetime as dt
 
-from flask import current_app as app, request
+from flask import current_app as app
 from imp_prof import Record
 
 
 class MetricWrapper:
     """Wrapper around all Prometheus metric types"""
 
-    item: str
-    method: str
+    name: str
+    item: typing.List[str]
+    method: typing.List[str]
     job: str
     metric: str
     _values: typing.List[
@@ -25,7 +26,7 @@ class MetricWrapper:
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -34,14 +35,14 @@ class MetricWrapper:
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        self.item = item
+        self.name = name
+        self.item = []
         self.units = units
         self._values = []
-        self.method = ""
+        self.method = []
         self.job = ""
         self.label_names = list(set(labels)) if labels else []
         self._label_values = []
@@ -55,11 +56,11 @@ class MetricWrapper:
         records = []
         for i in range(len(self._values)):
             record: Record = {
-                "item": self.item,
+                "item": self.method[i].split(":")[0],
                 "metric": self.metric,
                 "units": self.units,
                 "job": self.job,
-                "method": self.method,
+                "method": self.method[i],
                 "labels": self._label_values[i],
                 "value": self._values[i],
             }
@@ -79,6 +80,7 @@ class MetricWrapper:
     def store_operation(
         self,
         operation: str = None,
+        method: str = None,
         value: typing.Optional[
             typing.Union[
                 float, str, tuple[str, typing.Union[float, dict[str, typing.Any]]]
@@ -94,6 +96,7 @@ class MetricWrapper:
         in operation parameter.
 
         :param operation: string identifying operation
+        :param method: measured method
         :param value: measured value
         :param label_values: values of labels
         :param args: will be passed to specific operation of given metric
@@ -103,13 +106,9 @@ class MetricWrapper:
         try:
             with app.app_context():
                 if self.job == "":
-                    self.job = app.import_name.split(".")[0].upper()
-                self.method = request.method
+                    self.job = app.import_name
         except RuntimeError:
-            # TODO: job as project name
-            self.job = ""
-            # TODO: method as none?
-            self.method = ""
+            pass
 
         if label_values is None:
             label_values = {}
@@ -123,14 +122,17 @@ class MetricWrapper:
                 raise ValueError("Unknown or missing label")
             if operation is None:
                 operation = self.default_operation
+            self.method.append(method)
             self.operations[operation](value, args, kwargs)
         except KeyError:
             raise ValueError("Unknown operation")
 
     def cleanup(self):
         """Cleanup after metrics was sent"""
-        self._values = []
-        self._label_values = []
+        self._values.clear()
+        self._label_values.clear()
+        self.method.clear()
+        self.item.clear()
 
 
 class Histogram(MetricWrapper):
@@ -140,7 +142,7 @@ class Histogram(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -149,11 +151,10 @@ class Histogram(MetricWrapper):
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "histogram"
         self.default_operation = "observe"
         self.operations = {"observe": self._observe}
@@ -177,7 +178,7 @@ class Summary(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -186,11 +187,10 @@ class Summary(MetricWrapper):
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "summary"
         self.default_operation = "observe"
         self.operations = {"observe": self._observe}
@@ -214,7 +214,7 @@ class Counter(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -223,11 +223,10 @@ class Counter(MetricWrapper):
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "counter"
         self.default_operation = "inc"
         self.operations = {"inc": self._inc}
@@ -251,7 +250,7 @@ class Info(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -260,13 +259,12 @@ class Info(MetricWrapper):
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
         if units is None:
             units = "info"
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "info"
         self.default_operation = "info"
         self.operations = {"info": self._info}
@@ -292,7 +290,7 @@ class Gauge(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
@@ -301,11 +299,10 @@ class Gauge(MetricWrapper):
 
         Set values that are in Type Record.
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "gauge"
         self.default_operation = "inc"
         self.operations = {
@@ -356,7 +353,7 @@ class Enum(MetricWrapper):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         states: typing.List[str],
         units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
@@ -366,14 +363,13 @@ class Enum(MetricWrapper):
 
         Set values that are in Type Record
 
-        :param item: name of metric instance viz. Type Record
         :param units: units of measurement
         :param states: states which can enum have
         :param labels: label_names of metric viz. Type Record
         """
         if units is None:
             units = "enum"
-        super().__init__(item, units, labels)
+        super().__init__(name, units, labels)
         self.metric = "enum"
         self.default_operation = "state"
         self.states = states
@@ -405,14 +401,13 @@ class TimeProfiler(Histogram):
 
     def __init__(
         self,
-        item: str,
+        name: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
         """
-        :param item: name of metric instance viz. Type Record
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, "mS", labels)
+        super().__init__(name, "mS", labels)
         self.operations = {"stop": self._stop}
         self.default_operation = "stop"
         self._start_ts = []
@@ -443,9 +438,9 @@ class TimeProfiler(Histogram):
     def __str__(self):
         return (
             "profiler: "
-            + self.item
-            + ", context: "
-            + self._label_values[-1]["context"]
+            + self.name
+            + ", method: "
+            + self.method[-1]
             + ", value: "
             + str(self._values[-1][1])
             + " ms"
@@ -455,14 +450,13 @@ class TimeProfiler(Histogram):
 class ResponseSize(Histogram):
     def __init__(
         self,
-        item: str,
+        name: str,
         labels: typing.Optional[typing.List[str]] = None,
     ) -> None:
         """
-        :param item: name of metric instance viz. Type Record
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(item, "B", labels)
+        super().__init__(name, "B", labels)
         self.operations = {"rec": self._rec}
         self.default_operation = "rec"
 
@@ -479,9 +473,9 @@ class ResponseSize(Histogram):
     def __str__(self):
         return (
             "profiler: "
-            + self.item
-            + ", context: "
-            + self._label_values[-1]["context"]
+            + self.name
+            + ", method: "
+            + self.method[0]
             + ", value: "
             + str(self._values[0][1])
             + "B"

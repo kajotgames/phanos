@@ -6,15 +6,21 @@ import typing
 
 
 class MethodTree:
-    """Class for storing order of method calls with its names"""
+    """
+    Tree for storing method calls context
+    """
 
     parent: typing.Optional[MethodTree]
     children: typing.List[MethodTree]
-    method: typing.Optional[typing.Callable]
+    method: typing.Optional[callable]
     class_: typing.Optional[str]
     context: str
 
-    def __init__(self, method: typing.Optional[str, typing.Callable] = None) -> None:
+    def __init__(self, method: typing.Optional[callable] = None) -> None:
+        """Set method and nodes context
+
+        :param method: method, which was decorated with @profile if None then root node
+        """
         self.children = []
         self.parent = None
 
@@ -25,36 +31,40 @@ class MethodTree:
 
     def add_child(self, child: MethodTree) -> MethodTree:
         """Add child to method tree node
+
+        Adds child to tree node. Sets Context string of child node
+
         :param child: child to be inserted
         """
         child.parent = self
         if self.context != "":
             child.context = self.context + "." + child.context
         else:
-            child.context = (
-                self.get_method_class(child.method).__name__ + ":" + child.context
-            )
-        print(child.context)
+            child.context = self.get_method_class(child.method) + ":" + child.context
         self.children.append(child)
         return child
 
     def delete_child(self) -> None:
         """Delete first child of node"""
-        _ = self.children.pop(0)
+        child = self.children.pop(0)
+        child.parent = None
 
-    def get_method_class(self, meth):
+    @staticmethod
+    def get_method_class(meth: callable) -> str:
         """
-        neresi: partial, lambda
-        resi: static, mimo classu, abstract,
-        kdyz: class method -> tak prve classmethod pak profiling
+        Gets class/module name where specified method/function was defined.
 
-        :param meth:
-        :return:
+        Cannot do: partial, lambda !!!!!
+
+        Can do: rest
+
+        :param meth: method where to discover class
+        :return: class name where method was defined if was defined in class else module name
         """
         if inspect.ismethod(meth):
             for cls in inspect.getmro(meth.__self__.__class__):
                 if meth.__name__ in cls.__dict__:
-                    return cls
+                    return cls.__name__
             meth = getattr(meth, "__func__", meth)  # fallback to __qualname__ parsing
         if inspect.isfunction(meth):
             cls = getattr(
@@ -63,10 +73,12 @@ class MethodTree:
                 None,
             )
             if isinstance(cls, type):
-                return cls
+                return cls.__name__
         class_ = getattr(
             meth, "__objclass__", None
         )  # handle special descriptor objects
         if class_ is not None:
-            return class_
-        return inspect.getmodule(meth)
+            return class_.__name__
+        module = inspect.getmodule(meth).__name__
+
+        return module.split(".")[-1]
