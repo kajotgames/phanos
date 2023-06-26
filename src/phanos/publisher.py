@@ -4,16 +4,15 @@ import logging
 import sys
 import threading
 import typing
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-import aio_pika
 import imp_prof.messaging.publisher
 from logging import Logger
 
 from imp_prof.messaging.publisher import BlockingPublisher
 
-from src.phanos.metrics import MetricWrapper, TimeProfiler, ResponseSize
-from src.phanos.tree import MethodTree
+from .metrics import MetricWrapper, TimeProfiler, ResponseSize
+from .tree import MethodTree
 
 
 TIME_PROFILER = "time_profiler"
@@ -24,7 +23,7 @@ class OutputFormatter:
     """class for converting Record type into profiling string"""
 
     @staticmethod
-    def record_to_str(name: str, record: imp_prof.Record):
+    def record_to_str(name: str, record: imp_prof.Record) -> str:
         """converts Record type into profiling string
 
         :param name: name of profiler
@@ -55,19 +54,21 @@ class OutputFormatter:
 class BaseHandler:
     """ " base class for record handling"""
 
-    name: str
+    handler_name: str
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, handler_name: str) -> None:
         """
-        :param: name of profiler"""
-        self.name = name
+        :param handler_name: name of handler. used for managing handlers"""
+        self.handler_name = handler_name
 
     @abstractmethod
-    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+    def handle(
+        self, profiler_name: typing.Optional[str], records: typing.List[imp_prof.Record]
+    ) -> None:
         """
         method for handling records
 
-        :param name: name of profiler
+        :param profiler_name: name of profiler
         :param records: list of records to handle
         """
         raise NotImplementedError
@@ -76,12 +77,12 @@ class BaseHandler:
 class RabbitMQHandler(BaseHandler):
     """RabbitMQ record handler"""
 
-    _publisher: typing.Optional.BlockingPublisher
+    _publisher: typing.Optional[BlockingPublisher]
     _logger: logging.Logger
 
     def __init__(
         self,
-        name: str,
+        handler_name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
         user: str = None,
@@ -91,16 +92,14 @@ class RabbitMQHandler(BaseHandler):
         retry_delay: float = 0.137,
         retry: int = 3,
         exchange_name: str = "profiling",
-        exchange_type: typing.Union[
-            str, aio_pika.ExchangeType
-        ] = aio_pika.ExchangeType.FANOUT,
+        exchange_type: str = "fanout",
         logger: typing.Optional[Logger] = None,
         **kwargs,
     ) -> None:
         """Creates BlockingPublisher instance (connection not established yet),
          sets logger and create time profiler and response size profiler
 
-        :param name: name of profiler
+        :param handler_name: name of handler. used for managing handlers
         :param host: RabbitMQ server host
         :param port: RabbitMQ server port
         :param user: RabbitMQ username
@@ -113,7 +112,7 @@ class RabbitMQHandler(BaseHandler):
         :param exchange_type:
         :param logger: logger
         """
-        super().__init__(name)
+        super().__init__(handler_name)
 
         self._logger = logger or logging.getLogger(__name__)
         self._publisher = BlockingPublisher(
@@ -140,23 +139,27 @@ class RabbitMQHandler(BaseHandler):
         self._logger.info("RabbitMQHandler created successfully")
         self._publisher.close()
 
+    """    
     def reconnect(self, silent: bool = False) -> None:
-        """Force reconnect RabbitMQ
+        '''Force reconnect RabbitMQ
 
         :param silent: should rise error if occur
-        """
+        '''
         self._publisher.reconnect(silent)
+        """
 
     def handle(
         self,
-        name: str = None,
+        name: typing.Optional[str] = None,
         records: typing.Optional[typing.List[imp_prof.Record]] = None,
     ) -> None:
         """Sends list of records to rabitMq queue
 
-        :param name: name of profiler
+        :param name: name of profiler (not used)
         :param records: list of records to publish
         """
+
+        _ = name
         if records is None:
             records = []
         for record in records:
@@ -170,14 +173,16 @@ class LoggerHandler(BaseHandler):
     _formatter: OutputFormatter
     level: int
 
-    def __init__(self, name, logger: logging.Logger = None, level: int = 10) -> None:
+    def __init__(
+        self, handler_name: str, logger: logging.Logger = None, level: int = 10
+    ) -> None:
         """
 
-        :param name: name of profiler
+        :param handler_name: name of handler. used for managing handlers
         :param logger: logger instance if none -> creates new with name PHANOS
         :param level: level of logger in which prints records. default is DEBUG
         """
-        super().__init__(name)
+        super().__init__(handler_name)
         if logger is not None:
             self._logger = logger
         else:
@@ -189,14 +194,16 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self._formatter = OutputFormatter()
 
-    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+    def handle(self, profiler_name: str, records: typing.List[imp_prof.Record]) -> None:
         """logs list of records
 
-        :param name: name of profiler
+        :param profiler_name: name of profiler
         :param records: list of records
         """
         for record in records:
-            self._logger.log(self.level, self._formatter.record_to_str(name, record))
+            self._logger.log(
+                self.level, self._formatter.record_to_str(profiler_name, record)
+            )
 
 
 class StreamHandler(BaseHandler):
@@ -206,27 +213,27 @@ class StreamHandler(BaseHandler):
     output: typing.TextIO
     _lock: threading.Lock
 
-    def __init__(self, name, output: typing.TextIO = sys.stdout) -> None:
+    def __init__(self, handler_name: str, output: typing.TextIO = sys.stdout) -> None:
         """
 
-        :param name: name of profiler
-        :param output: stream output. Default sys.stdout
+        :param handler_name: name of profiler
+        :param output: stream output. Default 'sys.stdout'
         """
-        super().__init__(name)
+        super().__init__(handler_name)
         self.output = output
         self._formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, name: str, records: typing.List[imp_prof.Record]) -> None:
+    def handle(self, profiler_name: str, records: typing.List[imp_prof.Record]) -> None:
         """logs list of records
 
-        :param name: name of profiler
+        :param profiler_name: name of profiler
         :param records: list of records
         """
         for record in records:
             with self._lock:
                 print(
-                    self._formatter.record_to_str(name, record),
+                    self._formatter.record_to_str(profiler_name, record),
                     file=self.output,
                     flush=True,
                 )
@@ -239,7 +246,7 @@ class PhanosProfiler:
     _metrics: typing.Dict[str, MetricWrapper]
 
     _root: MethodTree
-    _current_node: MethodTree
+    current_node: MethodTree
 
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
@@ -283,7 +290,7 @@ class PhanosProfiler:
             self.create_response_size_profiler()
 
         self._root = MethodTree()
-        self._current_node = self._root
+        self.current_node = self._root
 
         self.before_func = None
         self.after_func = None
@@ -292,12 +299,12 @@ class PhanosProfiler:
 
         self.handle_records = handle_records
 
-    def create_time_profiler(self):
+    def create_time_profiler(self) -> None:
         """Create time profiling metric"""
         self.time_profile = TimeProfiler(TIME_PROFILER)
         self.add_metric(self.time_profile)
 
-    def create_response_size_profiler(self):
+    def create_response_size_profiler(self) -> None:
         """create response size profiling metric"""
         self.resp_size_profile = ResponseSize(RESPONSE_SIZE)
         self.add_metric(self.resp_size_profile)
@@ -344,7 +351,7 @@ class PhanosProfiler:
 
         :param handler: handler instance
         """
-        self._handlers[handler.name] = handler
+        self._handlers[handler.handler_name] = handler
 
     def delete_handler(self, handler_name: str) -> None:
         """Delete handler from profiler
@@ -370,10 +377,10 @@ class PhanosProfiler:
         # TODO: check this with own metric
         def inner(*args, **kwargs) -> typing.Any:
             if self._handlers != [] and self.handle_records:
-                if self._current_node.parent == self._root:
-                    self._before_root_func(func)
+                self.current_node = self.current_node.add_child(MethodTree(func))
 
-                self._current_node = self._current_node.add_child(MethodTree(func))
+                if self.current_node.parent == self._root:
+                    self._before_root_func(func)
 
                 self._before_func(func)
 
@@ -382,12 +389,12 @@ class PhanosProfiler:
             if self._handlers != [] and self.handle_records:
                 self._after_func(result)
 
-                if self._current_node.parent == self._root:
+                if self.current_node.parent == self._root:
                     self._after_root_func(result)
                     self.handle_records_clear()
 
-                self._current_node = self._current_node.parent
-                self._current_node.delete_child()
+                self.current_node = self.current_node.parent
+                self.current_node.delete_child()
             return result
 
         return inner
@@ -413,7 +420,7 @@ class PhanosProfiler:
         if self.resp_size_profile:
             self.resp_size_profile.store_operation(
                 operation="rec",
-                method=self._current_node.context,
+                method=self.current_node.context,
                 value=fn_result,
                 label_values={},
             )
@@ -421,7 +428,7 @@ class PhanosProfiler:
         if callable(self.after_root_func):
             self.after_root_func(fn_result=fn_result)
 
-    def _before_func(self, func):
+    def _before_func(self, func) -> None:
         # user custom
         if callable(self.before_func):
             self.before_func(function=func)
@@ -429,18 +436,18 @@ class PhanosProfiler:
         if self.time_profile:
             self.time_profile.start()
 
-    def _after_func(self, fn_result: typing.Any):
+    def _after_func(self, fn_result: typing.Any) -> None:
         # mine
         if self.time_profile:
             self.time_profile.store_operation(
-                operation="stop", method=self._current_node.context, label_values={}
+                operation="stop", method=self.current_node.context, label_values={}
             )
         # custom
         if callable(self.after_func):
             self.after_func(fn_result=fn_result)
 
     # TODO: make this better
-    def handle_records_clear(self):
+    def handle_records_clear(self) -> None:
         """Pass records to each registered Handler and clear stored records"""
         # send records and log em
         for metric in self._metrics.values():

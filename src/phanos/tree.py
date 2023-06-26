@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import inspect
 import typing
 
@@ -74,7 +73,7 @@ class MethodTree:
             )
             if isinstance(cls, type):
                 return cls.__name__
-        class_ = getattr(
+        class_: type = getattr(
             meth, "__objclass__", None
         )  # handle special descriptor objects
         if class_ is not None:

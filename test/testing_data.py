@@ -1,49 +1,23 @@
-resp_size_out = {
-    "item": "DummyResource",
-    "metric": "histogram",
-    "units": "B",
-    "job": "TEST",
-    "method": "DummyResource:get",
-    "labels": {},
-    "value": ("observe", 56.0),
-}
-
-time_profile_out = [
+profiling_out = [
     {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
         "method": "DummyResource:get.first_access",
-        "labels": {},
-        "value": ("observe", 2.0),
+        "value": 2.0,
     },
     {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
         "method": "DummyResource:get.second_access.first_access",
-        "labels": {},
-        "value": ("observe", 2.0),
+        "value": 2.0,
     },
     {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
         "method": "DummyResource:get.second_access",
-        "labels": {},
-        "value": ("observe", 5.0),
+        "value": 5.0,
     },
     {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
         "method": "DummyResource:get",
-        "labels": {},
-        "value": ("observe", 7.0),
+        "value": 7.0,
+    },
+    {
+        "method": "DummyResource:get",
+        "value": 56.0,
     },
 ]
 
@@ -174,4 +148,38 @@ enum_no_lbl = [
         "labels": {},
         "value": ("state", "true"),
     }
+]
+
+
+custom_profile_out = [
+    {
+        "method": "DummyDbAccess:second_access",
+        "value": 1.0,
+        "place": "before_root",
+    },
+    {
+        "method": "DummyDbAccess:second_access",
+        "value": 2.0,
+        "place": "before_func",
+    },
+    {
+        "method": "DummyDbAccess:second_access.first_access",
+        "value": 2.0,
+        "place": "before_func",
+    },
+    {
+        "method": "DummyDbAccess:second_access.first_access",
+        "value": 3.0,
+        "place": "after_func",
+    },
+    {
+        "method": "DummyDbAccess:second_access",
+        "value": 3.0,
+        "place": "after_func",
+    },
+    {
+        "method": "DummyDbAccess:second_access",
+        "value": 4.0,
+        "place": "after_root",
+    },
 ]

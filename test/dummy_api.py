@@ -5,7 +5,6 @@ from time import sleep
 
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
-from jinja2.nodes import Test
 
 from src.phanos import profile_publisher
 
@@ -16,14 +15,16 @@ def dummy_method():
     pass
 
 
-@profile_publisher.profile
-def no_class():
-    sleep(0.2)
-
-
 class DummyDbAccess:
     @staticmethod
     def test_static():
+        pass
+
+    @classmethod
+    def test_class(cls):
+        pass
+
+    def test_method(self):
         pass
 
     @classmethod
@@ -54,8 +55,3 @@ api = Api(
     prefix="/api",
 )
 api.add_namespace(ns)
-
-if __name__ == "__main__":
-    # no_class()
-    dummy = DummyDbAccess()
-    dummy.first_access()

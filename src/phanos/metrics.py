@@ -16,9 +16,7 @@ class MetricWrapper:
     method: typing.List[str]
     job: str
     metric: str
-    _values: typing.List[
-        typing.Union[float, str, tuple[str, typing.Union[float, dict[str, typing.Any]]]]
-    ]
+    _values: typing.List[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]
     label_names: typing.Optional[typing.List[str]]
     _label_values: typing.Optional[typing.List[typing.Dict[str, str]]]
     operations: typing.Dict[str, typing.Callable]
@@ -49,7 +47,7 @@ class MetricWrapper:
         self.operations = {}
         self.default_operation = ""
 
-    def _to_records(self):
+    def _to_records(self) -> typing.List[Record]:
         """Convert measured values into Type Record
 
         :returns: List of records"""
@@ -68,7 +66,7 @@ class MetricWrapper:
 
         return records
 
-    def _check_labels(self, labels):
+    def _check_labels(self, labels: typing.List[str]) -> bool:
         """Check if labels of records == labels specified at init
 
         :param labels: label keys and values of one record
@@ -83,7 +81,10 @@ class MetricWrapper:
         method: str = None,
         value: typing.Optional[
             typing.Union[
-                float, str, tuple[str, typing.Union[float, dict[str, typing.Any]]]
+                float,
+                str,
+                dict[str, typing.Any],
+                tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
             ]
         ] = None,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
@@ -113,11 +114,9 @@ class MetricWrapper:
         if label_values is None:
             label_values = {}
         try:
-            labels_ok = self._check_labels(label_values.keys())
+            labels_ok = self._check_labels(list(label_values.keys()))
             if labels_ok and label_values is not None:
                 self._label_values.append(label_values)
-            elif labels_ok:
-                self._label_values.append({})
             else:
                 raise ValueError("Unknown or missing label")
             if operation is None:
@@ -127,7 +126,7 @@ class MetricWrapper:
         except KeyError:
             raise ValueError("Unknown operation")
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Cleanup after metrics was sent"""
         self._values.clear()
         self._label_values.clear()
@@ -397,7 +396,7 @@ class TimeProfiler(Histogram):
     measured unit is milliseconds
     """
 
-    start_ts: typing.List[dt]
+    _start_ts: typing.List[dt]
 
     def __init__(
         self,
@@ -435,17 +434,6 @@ class TimeProfiler(Histogram):
         super().cleanup()
         self._start_ts = []
 
-    def __str__(self):
-        return (
-            "profiler: "
-            + self.name
-            + ", method: "
-            + self.method[-1]
-            + ", value: "
-            + str(self._values[-1][1])
-            + " ms"
-        )
-
 
 class ResponseSize(Histogram):
     def __init__(
@@ -464,19 +452,4 @@ class ResponseSize(Histogram):
         """records size of response"""
         _ = args
         _ = kwargs
-        try:
-            with app.app_context():
-                self._observe(float(sys.getsizeof(value)))
-        except RuntimeError:
-            pass
-
-    def __str__(self):
-        return (
-            "profiler: "
-            + self.name
-            + ", method: "
-            + self.method[0]
-            + ", value: "
-            + str(self._values[0][1])
-            + "B"
-        )
+        self._observe(float(sys.getsizeof(value)))

@@ -1,14 +1,14 @@
 import unittest
-import test_metric
-
-
-test_classes = [
-    test_metric.TestTimeProfiling,
-    test_metric.TestHandlers,
-    test_metric.TestTree,
-]
+from . import test_metric
 
 if __name__ == "__main__":
+    test_classes = [
+        test_metric.TestMetrics,
+        test_metric.TestHandlers,
+        test_metric.TestTree,
+        test_metric.TestProfiling,
+    ]
+
     loader = unittest.TestLoader()
     class_suites = []
     for class_ in test_classes:
