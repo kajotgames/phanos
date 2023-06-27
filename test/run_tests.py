@@ -1,5 +1,5 @@
 import unittest
-from . import test_metric
+from test import test_metric
 
 if __name__ == "__main__":
     test_classes = [

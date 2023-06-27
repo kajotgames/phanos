@@ -11,17 +11,17 @@ class MethodTree:
 
     parent: typing.Optional[MethodTree]
     children: typing.List[MethodTree]
-    method: typing.Optional[callable]
-    class_: typing.Optional[str]
+    method: typing.Optional[typing.Callable]
     context: str
 
-    def __init__(self, method: typing.Optional[callable] = None) -> None:
+    def __init__(self, method: typing.Optional[typing.Callable] = None) -> None:
         """Set method and nodes context
 
         :param method: method, which was decorated with @profile if None then root node
         """
         self.children = []
         self.parent = None
+        self.method = None
 
         self.context = ""
         if method is not None:
@@ -36,10 +36,12 @@ class MethodTree:
         :param child: child to be inserted
         """
         child.parent = self
-        if self.context != "":
-            child.context = self.context + "." + child.context
+        if self.method is None:  # equivalent of 'self.context != ""' -> i am root
+            child.context = (
+                self.get_method_class(child.method) + ":" + child.context
+            )  # child.method cannot be None
         else:
-            child.context = self.get_method_class(child.method) + ":" + child.context
+            child.context = self.context + "." + child.context
         self.children.append(child)
         return child
 
@@ -49,7 +51,7 @@ class MethodTree:
         child.parent = None
 
     @staticmethod
-    def get_method_class(meth: callable) -> str:
+    def get_method_class(meth: typing.Callable) -> str:
         """
         Gets class/module name where specified method/function was defined.
 
@@ -64,20 +66,20 @@ class MethodTree:
             for cls in inspect.getmro(meth.__self__.__class__):
                 if meth.__name__ in cls.__dict__:
                     return cls.__name__
-            meth = getattr(meth, "__func__", meth)  # fallback to __qualname__ parsing
+            meth = getattr(meth, "__func__", meth)
         if inspect.isfunction(meth):
-            cls = getattr(
+            cls_ = getattr(
                 inspect.getmodule(meth),
                 meth.__qualname__.split(".<locals>", 1)[0].rsplit(".", 1)[0],
                 None,
             )
-            if isinstance(cls, type):
-                return cls.__name__
-        class_: type = getattr(
+            if isinstance(cls_, type):
+                return cls_.__name__
+        class_ = getattr(
             meth, "__objclass__", None
         )  # handle special descriptor objects
         if class_ is not None:
             return class_.__name__
-        module = inspect.getmodule(meth).__name__
+        module = inspect.getmodule(meth)
 
-        return module.split(".")[-1]
+        return module.__name__.split(".")[-1] if module else ""

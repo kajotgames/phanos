@@ -5,4 +5,4 @@ from . import (
 )
 
 
-profile_publisher: publisher.PhanosProfiler = publisher.PhanosProfiler()
+phanos_profiler: publisher.PhanosProfiler = publisher.PhanosProfiler()

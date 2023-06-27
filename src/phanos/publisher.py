@@ -5,9 +5,9 @@ import sys
 import threading
 import typing
 from abc import abstractmethod
+from logging import Logger
 
 import imp_prof.messaging.publisher
-from logging import Logger
 
 from imp_prof.messaging.publisher import BlockingPublisher
 
@@ -63,7 +63,7 @@ class BaseHandler:
 
     @abstractmethod
     def handle(
-        self, profiler_name: typing.Optional[str], records: typing.List[imp_prof.Record]
+        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
     ) -> None:
         """
         method for handling records
@@ -77,7 +77,7 @@ class BaseHandler:
 class RabbitMQHandler(BaseHandler):
     """RabbitMQ record handler"""
 
-    _publisher: typing.Optional[BlockingPublisher]
+    _publisher: BlockingPublisher
     _logger: logging.Logger
 
     def __init__(
@@ -85,8 +85,8 @@ class RabbitMQHandler(BaseHandler):
         handler_name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
-        user: str = None,
-        password: str = None,
+        user: typing.Optional[str] = None,
+        password: typing.Optional[str] = None,
         heartbeat: int = 47,
         timeout: float = 23,
         retry_delay: float = 0.137,
@@ -131,37 +131,26 @@ class RabbitMQHandler(BaseHandler):
         )
         try:
             self._publisher.connect()
-        except imp_prof.messaging.publisher.NETWORK_ERRORS as e:
+        except imp_prof.messaging.publisher.NETWORK_ERRORS as err:
             self._logger.error(
-                f"RabbitMQHandler cannot connect to RabbitMQ because of {e}"
+                f"RabbitMQHandler cannot connect to RabbitMQ because of {err}"
             )
-            raise RuntimeError("Cannot connect to RabbitMQ")
+            raise RuntimeError("Cannot connect to RabbitMQ") from err
         self._logger.info("RabbitMQHandler created successfully")
         self._publisher.close()
 
-    """    
-    def reconnect(self, silent: bool = False) -> None:
-        '''Force reconnect RabbitMQ
-
-        :param silent: should rise error if occur
-        '''
-        self._publisher.reconnect(silent)
-        """
-
     def handle(
         self,
-        name: typing.Optional[str] = None,
-        records: typing.Optional[typing.List[imp_prof.Record]] = None,
+        records: typing.List[imp_prof.Record],
+        profiler_name: str = "profiler",
     ) -> None:
         """Sends list of records to rabitMq queue
 
-        :param name: name of profiler (not used)
+        :param profiler_name: name of profiler (not used)
         :param records: list of records to publish
         """
 
-        _ = name
-        if records is None:
-            records = []
+        _ = profiler_name
         for record in records:
             _ = self._publisher.publish(record)
 
@@ -174,7 +163,10 @@ class LoggerHandler(BaseHandler):
     level: int
 
     def __init__(
-        self, handler_name: str, logger: logging.Logger = None, level: int = 10
+        self,
+        handler_name: str,
+        logger: typing.Optional[logging.Logger] = None,
+        level: int = 10,
     ) -> None:
         """
 
@@ -194,7 +186,9 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self._formatter = OutputFormatter()
 
-    def handle(self, profiler_name: str, records: typing.List[imp_prof.Record]) -> None:
+    def handle(
+        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
+    ) -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -224,7 +218,9 @@ class StreamHandler(BaseHandler):
         self._formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, profiler_name: str, records: typing.List[imp_prof.Record]) -> None:
+    def handle(
+        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
+    ) -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -251,10 +247,10 @@ class PhanosProfiler:
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
 
-    before_func: typing.Optional[callable]
-    after_func: typing.Optional[callable]
-    before_root_func: typing.Optional[callable]
-    after_root_func: typing.Optional[callable]
+    before_func: typing.Optional[typing.Callable]
+    after_func: typing.Optional[typing.Callable]
+    before_root_func: typing.Optional[typing.Callable]
+    after_root_func: typing.Optional[typing.Callable]
 
     _handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
@@ -364,7 +360,7 @@ class PhanosProfiler:
         """delete all handlers"""
         self._handlers.clear()
 
-    def profile(self, func: callable) -> callable:
+    def profile(self, func: typing.Callable) -> typing.Callable:
         """
         Decorator specifying which methods should be profiled.
         Default profiler is time profiler which measures execution time of decorated methods
@@ -374,23 +370,22 @@ class PhanosProfiler:
         :param func: method or function which should be profiled
         """
 
-        # TODO: check this with own metric
         def inner(*args, **kwargs) -> typing.Any:
-            if self._handlers != [] and self.handle_records:
+            if self._handlers and self.handle_records:
                 self.current_node = self.current_node.add_child(MethodTree(func))
 
                 if self.current_node.parent == self._root:
-                    self._before_root_func(func)
+                    self._before_root_func(func, *args, **kwargs)
 
-                self._before_func(func)
+                self._before_func(func, *args, **kwargs)
 
             result = func(*args, **kwargs)
 
-            if self._handlers != [] and self.handle_records:
-                self._after_func(result)
+            if self._handlers and self.handle_records:
+                self._after_func(result, *args, **kwargs)
 
                 if self.current_node.parent == self._root:
-                    self._after_root_func(result)
+                    self._after_root_func(result, *args, **kwargs)
                     self.handle_records_clear()
 
                 self.current_node = self.current_node.parent
@@ -399,18 +394,17 @@ class PhanosProfiler:
 
         return inner
 
-    # TODO: check this later, maybe edit
-    def _before_root_func(self, function: callable) -> None:
+    def _before_root_func(self, function: typing.Callable, *args, **kwargs) -> None:
         """method executing before root function
 
         :param function: root function
         """
         # custom
         if callable(self.before_root_func):
-            self.before_root_func(function=function)
+            self.before_root_func(function=function, *args, **kwargs)
         # here mine if needed
 
-    def _after_root_func(self, fn_result: typing.Any) -> None:
+    def _after_root_func(self, fn_result: typing.Any, *args, **kwargs) -> None:
         """method executing after the root function
 
 
@@ -426,17 +420,17 @@ class PhanosProfiler:
             )
         # user custom function
         if callable(self.after_root_func):
-            self.after_root_func(fn_result=fn_result)
+            self.after_root_func(fn_result=fn_result, *args, **kwargs)
 
-    def _before_func(self, func) -> None:
+    def _before_func(self, func, *args, **kwargs) -> None:
         # user custom
         if callable(self.before_func):
-            self.before_func(function=func)
+            self.before_func(function=func, *args, **kwargs)
         # mine
         if self.time_profile:
             self.time_profile.start()
 
-    def _after_func(self, fn_result: typing.Any) -> None:
+    def _after_func(self, fn_result: typing.Any, *args, **kwargs) -> None:
         # mine
         if self.time_profile:
             self.time_profile.store_operation(
@@ -444,14 +438,13 @@ class PhanosProfiler:
             )
         # custom
         if callable(self.after_func):
-            self.after_func(fn_result=fn_result)
+            self.after_func(fn_result=fn_result, *args, **kwargs)
 
-    # TODO: make this better
     def handle_records_clear(self) -> None:
         """Pass records to each registered Handler and clear stored records"""
         # send records and log em
         for metric in self._metrics.values():
-            records = metric._to_records()
+            records = metric.to_records()
             for handler in self._handlers.values():
-                handler.handle(metric.name, records)
+                handler.handle(records, metric.name)
             metric.cleanup()

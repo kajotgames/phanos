@@ -9,7 +9,7 @@ from flask import Flask
 from flask.ctx import AppContext
 from flask.testing import FlaskClient
 
-from src.phanos import profile_publisher, publisher
+from src.phanos import phanos_profiler, publisher
 from src.phanos.publisher import (
     StreamHandler,
     RabbitMQHandler,
@@ -75,7 +75,7 @@ class TestTree(unittest.TestCase):
 
 class TestHandlers(unittest.TestCase):
     def tearDown(self) -> None:
-        profile_publisher.delete_handlers()
+        phanos_profiler.delete_handlers()
 
     def test_stream_handler(self):
         # base handler test
@@ -84,8 +84,8 @@ class TestHandlers(unittest.TestCase):
         # stream handler
         output = StringIO()
         str_handler = StreamHandler("str_handler", output)
-        str_handler.handle("test_name", testing_data.test_handler_in)
-        str_handler.handle("test_name", testing_data.test_handler_in_no_lbl)
+        str_handler.handle(testing_data.test_handler_in, "test_name")
+        str_handler.handle(testing_data.test_handler_in_no_lbl, "test_name")
         output.seek(0)
         self.assertEqual(
             output.read(),
@@ -102,7 +102,7 @@ class TestHandlers(unittest.TestCase):
         handler.setLevel(10)
         logger.addHandler(handler)
         log_handler = LoggerHandler("log_handler", logger)
-        log_handler.handle("test_name", testing_data.test_handler_in)
+        log_handler.handle(testing_data.test_handler_in, "test_name")
         output.seek(0)
         result = output.read()
         self.assertEqual(result, testing_data.test_handler_out)
@@ -114,16 +114,16 @@ class TestHandlers(unittest.TestCase):
         sys.stdout = tmp
 
     def test_handlers_management(self):
-        length = len(profile_publisher._handlers)
+        length = len(phanos_profiler._handlers)
         log1 = LoggerHandler("log_handler1")
-        profile_publisher.add_handler(log1)
+        phanos_profiler.add_handler(log1)
         log2 = LoggerHandler("log_handler2")
-        profile_publisher.add_handler(log2)
-        self.assertEqual(len(profile_publisher._handlers), length + 2)
-        profile_publisher.delete_handler("log_handler1")
-        self.assertEqual(profile_publisher._handlers.get("log_handler1"), None)
-        profile_publisher.delete_handlers()
-        self.assertEqual(profile_publisher._handlers, {})
+        phanos_profiler.add_handler(log2)
+        self.assertEqual(len(phanos_profiler._handlers), length + 2)
+        phanos_profiler.delete_handler("log_handler1")
+        self.assertEqual(phanos_profiler._handlers.get("log_handler1"), None)
+        phanos_profiler.delete_handlers()
+        self.assertEqual(phanos_profiler._handlers, {})
 
     def test_rabbit_handler_connection(self):
         self.assertRaises(RuntimeError, RabbitMQHandler, "handle")
@@ -136,11 +136,8 @@ class TestHandlers(unittest.TestCase):
 
             test_publish = handler._publisher.publish = MagicMock(return_value=3)
 
-            handler.handle(name="name", records=None)
-            test_publish.assert_not_called()
-
             #  self.assert
-            handler.handle(name="name", records=testing_data.test_handler_in)
+            handler.handle(profiler_name="name", records=testing_data.test_handler_in)
             test_publish.assert_called()
 
 
@@ -163,8 +160,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 hist_no_lbl.store_operation,
-                "observe",
                 "test:method",
+                "observe",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -172,21 +169,21 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 hist_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 2.0,
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 hist_no_lbl.store_operation,
-                "observe",
                 "test:method",
+                "observe",
                 "asd",
             )
             # valid operation
-            hist_no_lbl.store_operation("observe", "test:method", 2.0),
-            self.assertEqual(hist_no_lbl._to_records(), testing_data.hist_no_lbl)
+            hist_no_lbl.store_operation("test:method", "observe", 2.0),
+            self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
             hist_w_lbl = Histogram("hist_w_lbl", "V", labels=["test"])
 
@@ -194,8 +191,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 hist_w_lbl.store_operation,
-                "observe",
                 "test:method",
+                "observe",
                 2.0,
             )
 
@@ -203,7 +200,7 @@ class TestMetrics(unittest.TestCase):
             hist_w_lbl.store_operation(
                 method="test:method", value=2.0, label_values={"test": "test"}
             )
-            self.assertEqual(hist_w_lbl._to_records(), testing_data.hist_w_lbl)
+            self.assertEqual(hist_w_lbl.to_records(), testing_data.hist_w_lbl)
 
     def test_summary(self):
         with app.test_request_context():
@@ -215,8 +212,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 sum_no_lbl.store_operation,
-                "observe",
                 "test:method",
+                "observe",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -224,21 +221,21 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 sum_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 2.0,
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 sum_no_lbl.store_operation,
-                "observe",
                 "test:method",
+                "observe",
                 "asd",
             )
             # valid operation
-            sum_no_lbl.store_operation("observe", "test:method", 2.0),
-            self.assertEqual(sum_no_lbl._to_records(), testing_data.sum_no_lbl)
+            sum_no_lbl.store_operation("test:method", "observe", 2.0),
+            self.assertEqual(sum_no_lbl.to_records(), testing_data.sum_no_lbl)
 
     def test_counter(self):
         with app.test_request_context():
@@ -250,8 +247,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 cnt_no_lbl.store_operation,
-                "inc",
                 "test:method",
+                "inc",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -259,30 +256,30 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 TypeError,
                 cnt_no_lbl.store_operation,
-                "inc",
                 "test:method",
+                "inc",
                 "asd",
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 cnt_no_lbl.store_operation,
-                "inc",
                 "test:method",
+                "inc",
                 -1,
             )
             # invalid operation
             self.assertRaises(
                 ValueError,
                 cnt_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 2.0,
             )
 
             # valid operation
-            cnt_no_lbl.store_operation("inc", "test:method", 2.0),
-            self.assertEqual(cnt_no_lbl._to_records(), testing_data.cnt_no_lbl)
+            cnt_no_lbl.store_operation("test:method", "inc", 2.0),
+            self.assertEqual(cnt_no_lbl.to_records(), testing_data.cnt_no_lbl)
 
     def test_info(self):
         with app.test_request_context():
@@ -293,22 +290,22 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 inf_no_lbl.store_operation,
-                "info",
                 "test:method",
+                "info",
                 "asd",
             )
             # invalid operation
             self.assertRaises(
                 ValueError,
                 inf_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 2.0,
             )
 
             # valid operation
-            inf_no_lbl.store_operation("info", "test:method", {"value": "asd"}),
-            self.assertEqual(inf_no_lbl._to_records(), testing_data.inf_no_lbl)
+            inf_no_lbl.store_operation("test:method", "info", {"value": "asd"}),
+            self.assertEqual(inf_no_lbl.to_records(), testing_data.inf_no_lbl)
 
     def test_gauge(self):
         with app.test_request_context():
@@ -320,8 +317,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 ValueError,
                 gauge_no_lbl.store_operation,
-                "inc",
                 "test:method",
+                "inc",
                 2.0,
                 label_values={"nonexistent": "123"},
             )
@@ -329,48 +326,48 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 TypeError,
                 gauge_no_lbl.store_operation,
-                "inc",
                 "test:method",
+                "inc",
                 "asd",
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 gauge_no_lbl.store_operation,
+                "test:method",
                 "inc",
-                "test:method",
                 -1,
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 gauge_no_lbl.store_operation,
+                "test:method",
                 "dec",
-                "test:method",
                 -1,
             )
             # invalid value
             self.assertRaises(
                 TypeError,
                 gauge_no_lbl.store_operation,
-                "set",
                 "test:method",
+                "set",
                 False,
             )
             # invalid operation
             self.assertRaises(
                 ValueError,
                 gauge_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 2.0,
             )
 
             # valid operation
-            gauge_no_lbl.store_operation("inc", "test:method", 2.0),
-            gauge_no_lbl.store_operation("dec", "test:method", 2.0),
-            gauge_no_lbl.store_operation("set", "test:method", 2.0),
-            self.assertEqual(gauge_no_lbl._to_records(), testing_data.gauge_no_lbl)
+            gauge_no_lbl.store_operation("test:method", "inc", 2.0),
+            gauge_no_lbl.store_operation("test:method", "dec", 2.0),
+            gauge_no_lbl.store_operation("test:method", "set", 2.0),
+            self.assertEqual(gauge_no_lbl.to_records(), testing_data.gauge_no_lbl)
 
     def test_enum(self):
         with app.test_request_context():
@@ -382,22 +379,22 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(
                 TypeError,
                 enum_no_lbl.store_operation,
-                "state",
                 "test:method",
+                "state",
                 "maybe",
             )
             # invalid operation
             self.assertRaises(
                 ValueError,
                 enum_no_lbl.store_operation,
-                "nonexistent",
                 "test:method",
+                "nonexistent",
                 "true",
             )
 
             # valid operation
-            enum_no_lbl.store_operation("state", "test", "true")
-            self.assertEqual(enum_no_lbl._to_records(), testing_data.enum_no_lbl)
+            enum_no_lbl.store_operation("test", "state", "true")
+            self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
 
     def test_builtin_profilers(self):
         time_profiler = TimeProfiler("test_time_prof")
@@ -406,10 +403,10 @@ class TestMetrics(unittest.TestCase):
         time_profiler.start()
         self.assertEqual(len(time_profiler._start_ts), 2)
         time.sleep(0.2)
-        time_profiler.store_operation("stop", "test:method")
+        time_profiler.store_operation("test:method", "stop")
         self.assertEqual(len(time_profiler._start_ts), 1)
         time.sleep(0.2)
-        time_profiler.store_operation("stop", "test:method")
+        time_profiler.store_operation("test:method", "stop")
         self.assertEqual(len(time_profiler._start_ts), 0)
         self.assertEqual(time_profiler._values[0][1] // 100, 2)
         self.assertEqual(time_profiler._values[1][1] // 100, 4)
@@ -422,65 +419,63 @@ class TestProfiling(unittest.TestCase):
         cls.client = cls.app.test_client()
 
     def setUp(self) -> None:
-        profile_publisher.create_time_profiler()
-        profile_publisher.create_response_size_profiler()
+        phanos_profiler.create_time_profiler()
+        phanos_profiler.create_response_size_profiler()
         self.output = StringIO()
         profile_handler = StreamHandler("name", self.output)
-        profile_publisher.add_handler(profile_handler)
+        phanos_profiler.add_handler(profile_handler)
 
     def tearDown(self) -> None:
-        profile_publisher.delete_handlers()
-        profile_publisher.delete_metrics(True, True)
-        profile_publisher.before_root_func = None
-        profile_publisher.after_root_func = None
-        profile_publisher.before_func = None
-        profile_publisher.after_func = None
+        phanos_profiler.delete_handlers()
+        phanos_profiler.delete_metrics(True, True)
+        phanos_profiler.before_root_func = None
+        phanos_profiler.after_root_func = None
+        phanos_profiler.before_func = None
+        phanos_profiler.after_func = None
         self.output.close()
 
     def test_metric_management(self):
-        length = len(profile_publisher._metrics)
+        length = len(phanos_profiler._metrics)
         # create metrics
         hist = Histogram("name", "units")
-        profile_publisher.add_metric(hist)
+        phanos_profiler.add_metric(hist)
         hist1 = Histogram("name1", "units")
-        profile_publisher.add_metric(hist1)
-        self.assertEqual(len(profile_publisher._metrics), length + 2)
+        phanos_profiler.add_metric(hist1)
+        self.assertEqual(len(phanos_profiler._metrics), length + 2)
         # delete metric
-        profile_publisher.delete_metric("name")
-        self.assertEqual(len(profile_publisher._metrics), length + 1)
-        self.assertEqual(profile_publisher._metrics.get("name"), None)
+        phanos_profiler.delete_metric("name")
+        self.assertEqual(len(phanos_profiler._metrics), length + 1)
+        self.assertEqual(phanos_profiler._metrics.get("name"), None)
         # delete time_profiling metric
-        profile_publisher.delete_metric(publisher.TIME_PROFILER)
-        self.assertEqual(profile_publisher._metrics.get(publisher.TIME_PROFILER), None)
-        self.assertEqual(profile_publisher.time_profile, None)
+        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
+        self.assertEqual(phanos_profiler._metrics.get(publisher.TIME_PROFILER), None)
+        self.assertEqual(phanos_profiler.time_profile, None)
         # delete response size metric
-        profile_publisher.delete_metric(publisher.RESPONSE_SIZE)
-        self.assertEqual(profile_publisher._metrics.get(publisher.RESPONSE_SIZE), None)
-        self.assertEqual(profile_publisher.resp_size_profile, None)
+        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
+        self.assertEqual(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE), None)
+        self.assertEqual(phanos_profiler.resp_size_profile, None)
         # create response size metric
-        profile_publisher.create_response_size_profiler()
-        self.assertIsNotNone(profile_publisher.resp_size_profile)
-        self.assertEqual(len(profile_publisher._metrics), 2)
+        phanos_profiler.create_response_size_profiler()
+        self.assertIsNotNone(phanos_profiler.resp_size_profile)
+        self.assertEqual(len(phanos_profiler._metrics), 2)
 
         # delete all metrics (without response size and time profiling metrics)
-        profile_publisher.delete_metrics()
-        self.assertEqual(len(profile_publisher._metrics), 1)
-        self.assertIsNotNone(profile_publisher.resp_size_profile, None)
-        self.assertIsNotNone(profile_publisher._metrics.get(publisher.RESPONSE_SIZE))
-        profile_publisher.delete_metrics(
-            rm_time_profile=True, rm_resp_size_profile=True
-        )
-        self.assertEqual(profile_publisher._metrics, {})
-        self.assertEqual(profile_publisher._metrics.get(publisher.RESPONSE_SIZE), None)
+        phanos_profiler.delete_metrics()
+        self.assertEqual(len(phanos_profiler._metrics), 1)
+        self.assertIsNotNone(phanos_profiler.resp_size_profile, None)
+        self.assertIsNotNone(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE))
+        phanos_profiler.delete_metrics(rm_time_profile=True, rm_resp_size_profile=True)
+        self.assertEqual(phanos_profiler._metrics, {})
+        self.assertEqual(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE), None)
 
     def test_profiling(self):
-        profile_publisher.handle_records = False
+        phanos_profiler.handle_records = False
         _ = self.client.get("http://localhost/api/dummy/one")
         self.output.seek(0)
         lines = self.output.readlines()
         self.assertEqual(lines, [])
 
-        profile_publisher.handle_records = True
+        phanos_profiler.handle_records = True
         _ = self.client.get("http://localhost/api/dummy/one")
 
         self.output.seek(0)
@@ -512,11 +507,11 @@ class TestProfiling(unittest.TestCase):
             testing_data.profiling_out[-1]["method"],
         )
 
-        self.assertEqual(profile_publisher.current_node, profile_publisher._root)
-        self.assertEqual(profile_publisher._root.children, [])
+        self.assertEqual(phanos_profiler.current_node, phanos_profiler._root)
+        self.assertEqual(phanos_profiler._root.children, [])
 
         # cleanup assertion
-        for metric in profile_publisher._metrics.values():
+        for metric in phanos_profiler._metrics.values():
             self.assertEqual(metric._values, [])
             self.assertEqual(metric._label_values, [])
             self.assertEqual(metric.method, [])
@@ -524,51 +519,51 @@ class TestProfiling(unittest.TestCase):
 
     def test_custom_profile_addition(self):
         hist = Histogram("test_name", "test_units", ["place"])
-        self.assertEqual(len(profile_publisher._metrics), 2)
-        profile_publisher.add_metric(hist)
-        self.assertEqual(len(profile_publisher._metrics), 3)
-        profile_publisher.delete_metric(publisher.TIME_PROFILER)
-        profile_publisher.delete_metric(publisher.RESPONSE_SIZE)
+        self.assertEqual(len(phanos_profiler._metrics), 2)
+        phanos_profiler.add_metric(hist)
+        self.assertEqual(len(phanos_profiler._metrics), 3)
+        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
+        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
         def before_root_func(function):
             hist.store_operation(
                 operation="observe",
-                method=profile_publisher.current_node.context,
+                method=phanos_profiler.current_node.context,
                 value=1.0,
                 label_values={"place": "before_root"},
             )
 
-        profile_publisher.before_root_func = before_root_func
+        phanos_profiler.before_root_func = before_root_func
 
         def before_func(function):
             hist.store_operation(
                 operation="observe",
-                method=profile_publisher.current_node.context,
+                method=phanos_profiler.current_node.context,
                 value=2.0,
                 label_values={"place": "before_func"},
             )
 
-        profile_publisher.before_func = before_func
+        phanos_profiler.before_func = before_func
 
         def after_func(fn_result):
             hist.store_operation(
                 operation="observe",
-                method=profile_publisher.current_node.context,
+                method=phanos_profiler.current_node.context,
                 value=3.0,
                 label_values={"place": "after_func"},
             )
 
-        profile_publisher.after_func = after_func
+        phanos_profiler.after_func = after_func
 
         def after_root_func(fn_result):
             hist.store_operation(
                 operation="observe",
-                method=profile_publisher.current_node.context,
+                method=phanos_profiler.current_node.context,
                 value=4.0,
                 label_values={"place": "after_root"},
             )
 
-        profile_publisher.after_root_func = after_root_func
+        phanos_profiler.after_root_func = after_root_func
 
         dummy_access = DummyDbAccess()
         _ = dummy_access.second_access()

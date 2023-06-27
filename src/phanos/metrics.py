@@ -17,8 +17,8 @@ class MetricWrapper:
     job: str
     metric: str
     _values: typing.List[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]
-    label_names: typing.Optional[typing.List[str]]
-    _label_values: typing.Optional[typing.List[typing.Dict[str, str]]]
+    label_names: typing.List[str]
+    _label_values: typing.List[typing.Dict[str, str]]
     operations: typing.Dict[str, typing.Callable]
     default_operation: str
 
@@ -47,19 +47,22 @@ class MetricWrapper:
         self.operations = {}
         self.default_operation = ""
 
-    def _to_records(self) -> typing.List[Record]:
+    def to_records(self) -> typing.List[Record]:
         """Convert measured values into Type Record
 
         :returns: List of records"""
         records = []
         for i in range(len(self._values)):
+            label_value = (
+                self._label_values[i] if self._label_values is not None else {}
+            )
             record: Record = {
                 "item": self.method[i].split(":")[0],
                 "metric": self.metric,
                 "units": self.units,
                 "job": self.job,
                 "method": self.method[i],
-                "labels": self._label_values[i],
+                "labels": label_value,
                 "value": self._values[i],
             }
             records.append(record)
@@ -77,8 +80,8 @@ class MetricWrapper:
 
     def store_operation(
         self,
-        operation: str = None,
-        method: str = None,
+        method: str,
+        operation: typing.Optional[str] = None,
         value: typing.Optional[
             typing.Union[
                 float,
@@ -123,15 +126,19 @@ class MetricWrapper:
                 operation = self.default_operation
             self.method.append(method)
             self.operations[operation](value, args, kwargs)
-        except KeyError:
-            raise ValueError("Unknown operation")
+        except KeyError as exc:
+            raise ValueError("Unknown operation") from exc
 
     def cleanup(self) -> None:
         """Cleanup after metrics was sent"""
-        self._values.clear()
-        self._label_values.clear()
-        self.method.clear()
-        self.item.clear()
+        if self._values is not None:
+            self._values.clear()
+        if self._label_values is not None:
+            self._label_values.clear()
+        if self.method is not None:
+            self.method.clear()
+        if self.item is not None:
+            self.item.clear()
 
 
 class Histogram(MetricWrapper):
@@ -436,6 +443,11 @@ class TimeProfiler(Histogram):
 
 
 class ResponseSize(Histogram):
+    """class for measuring response size from API
+
+    measured in bytes
+    """
+
     def __init__(
         self,
         name: str,

@@ -6,7 +6,7 @@ from time import sleep
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
 
-from src.phanos import profile_publisher
+from src.phanos import phanos_profiler
 
 ns = Namespace("dummy")
 
@@ -28,11 +28,11 @@ class DummyDbAccess:
         pass
 
     @classmethod
-    @profile_publisher.profile
+    @phanos_profiler.profile
     def first_access(cls):
         sleep(0.2)
 
-    @profile_publisher.profile
+    @phanos_profiler.profile
     def second_access(self):
         self.first_access()
         sleep(0.3)
@@ -42,7 +42,7 @@ class DummyDbAccess:
 class DummyResource(Resource):
     access = DummyDbAccess()
 
-    @profile_publisher.profile
+    @phanos_profiler.profile
     def get(self):
         self.access.first_access()
         self.access.second_access()
