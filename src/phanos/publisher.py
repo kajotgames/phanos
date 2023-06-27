@@ -335,6 +335,13 @@ class PhanosProfiler:
         if rm_resp_size_profile:
             self.resp_size_profile = None
 
+    def clear(self):
+        for metric in self._metrics.values():
+            metric.cleanup()
+
+        self.current_node = self._root
+        self._root.clear_tree()
+
     def add_metric(self, metric: MetricWrapper) -> None:
         """adds new metric to profiling
 
@@ -375,17 +382,19 @@ class PhanosProfiler:
                 self.current_node = self.current_node.add_child(MethodTree(func))
 
                 if self.current_node.parent == self._root:
-                    self._before_root_func(func, *args, **kwargs)
+                    print(*args)
+                    print(**kwargs)
+                    self._before_root_func(*args, **kwargs)
 
-                self._before_func(func, *args, **kwargs)
+                self._before_func(*args, **kwargs)
 
             result = func(*args, **kwargs)
 
             if self._handlers and self.handle_records:
-                self._after_func(result, *args, **kwargs)
+                self._after_func(*args, **kwargs)
 
                 if self.current_node.parent == self._root:
-                    self._after_root_func(result, *args, **kwargs)
+                    self._after_root_func(*args, **kwargs)
                     self.handle_records_clear()
 
                 self.current_node = self.current_node.parent

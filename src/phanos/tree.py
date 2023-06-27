@@ -50,6 +50,13 @@ class MethodTree:
         child = self.children.pop(0)
         child.parent = None
 
+    def clear_tree(self) -> None:
+        """Clears tree of all nodes from self"""
+        for child in self.children:
+            child.clear_tree()
+        self.parent = None
+        self.children.clear()
+
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:
         """
