@@ -74,6 +74,10 @@ class TestTree(unittest.TestCase):
 
 
 class TestHandlers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        phanos_profiler.config()
+
     def tearDown(self) -> None:
         phanos_profiler.delete_handlers()
 
@@ -415,6 +419,7 @@ class TestMetrics(unittest.TestCase):
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        phanos_profiler.config()
         cls.app = app
         cls.client = cls.app.test_client()
 

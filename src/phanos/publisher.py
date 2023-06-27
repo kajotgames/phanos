@@ -255,55 +255,58 @@ class PhanosProfiler:
     _handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
 
-    def __init__(
-        self,
-        logger=None,
-        time_profile: bool = True,
-        request_size_profile: bool = True,
-        handle_records: bool = True,
-    ) -> None:
+    def __init__(self) -> None:
         """Initialize ProfilesPublisher
 
         Initialization just creates new instance!!
-        for BlockingPublisher initialization call create_publisher(args)
 
-        :param logger: logger instance
-        :param time_profile: should create instance time profiler
-        :param request_size_profile: shoud create instance of request size profiler
-        :param handle_records: should handle recorded records
         """
 
-        self._logger = logger or logging.getLogger(__name__)
         self._metrics = {}
         self._handlers = {}
 
         self.request_size_profile = None
         self.time_profile = None
 
-        if time_profile:
-            self.create_time_profiler()
-        if request_size_profile:
-            self.create_response_size_profiler()
-
-        self._root = MethodTree()
-        self.current_node = self._root
-
         self.before_func = None
         self.after_func = None
         self.before_root_func = None
         self.after_root_func = None
 
+    def config(
+        self,
+        logger=None,
+        time_profile: bool = True,
+        request_size_profile: bool = True,
+        handle_records: bool = True,
+    ) -> None:
+        """configure PhanosProfiler
+        :param logger: logger instance
+        :param time_profile: should create instance time profiler
+        :param request_size_profile: should create instance of request size profiler
+        :param handle_records: should handle recorded records
+        """
+        self._logger = logger or logging.getLogger(__name__)
+        if time_profile:
+            self.create_time_profiler()
+        if request_size_profile:
+            self.create_response_size_profiler()
         self.handle_records = handle_records
+
+        self._root = MethodTree(None, self._logger)
+        self.current_node = self._root
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""
-        self.time_profile = TimeProfiler(TIME_PROFILER)
+        self.time_profile = TimeProfiler(TIME_PROFILER, logger=self._logger)
         self.add_metric(self.time_profile)
+        self._logger.debug("Phanos - time profiler created")
 
     def create_response_size_profiler(self) -> None:
         """create response size profiling metric"""
-        self.resp_size_profile = ResponseSize(RESPONSE_SIZE)
+        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, logger=self._logger)
         self.add_metric(self.resp_size_profile)
+        self._logger.debug("Phanos - response size profiler created")
 
     def delete_metric(self, item: str) -> None:
         """deletes one metric instance
@@ -314,6 +317,7 @@ class PhanosProfiler:
             self.time_profile = None
         if item == "response_size":
             self.resp_size_profile = None
+        self._logger.debug(f"Phanos - metric {item} deleted")
 
     def delete_metrics(
         self, rm_time_profile: bool = False, rm_resp_size_profile: bool = False
@@ -328,14 +332,10 @@ class PhanosProfiler:
             if (name != TIME_PROFILER or rm_time_profile) and (
                 name != RESPONSE_SIZE or rm_resp_size_profile
             ):
-                _ = self._metrics.pop(name, None)
-
-        if rm_time_profile:
-            self.time_profile = None
-        if rm_resp_size_profile:
-            self.resp_size_profile = None
+                self.delete_metric(name)
 
     def clear(self):
+        """clear all records from all metrics and clear method tree"""
         for metric in self._metrics.values():
             metric.cleanup()
 
@@ -348,6 +348,7 @@ class PhanosProfiler:
         :param metric: metric instance
         """
         self._metrics[metric.name] = metric
+        self._logger.debug(f"Phanos - metric {metric.name} added")
 
     def add_handler(self, handler: BaseHandler) -> None:
         """Add handler to profiler
@@ -355,6 +356,7 @@ class PhanosProfiler:
         :param handler: handler instance
         """
         self._handlers[handler.handler_name] = handler
+        self._logger.debug(f"Handler {handler.handler_name} added to phanos profiler")
 
     def delete_handler(self, handler_name: str) -> None:
         """Delete handler from profiler
@@ -362,10 +364,12 @@ class PhanosProfiler:
         :param handler_name: name of handler:
         """
         _ = self._handlers.pop(handler_name, None)
+        self._logger.debug(f"Phanos - handler {handler_name} deleted")
 
     def delete_handlers(self) -> None:
         """delete all handlers"""
         self._handlers.clear()
+        self._logger.debug(f"Phanos - All handlers deleted")
 
     def profile(self, func: typing.Callable) -> typing.Callable:
         """
@@ -379,21 +383,24 @@ class PhanosProfiler:
 
         def inner(*args, **kwargs) -> typing.Any:
             if self._handlers and self.handle_records:
-                self.current_node = self.current_node.add_child(MethodTree(func))
+                self.current_node = self.current_node.add_child(
+                    MethodTree(func, self._logger)
+                )
 
                 if self.current_node.parent == self._root:
-                    print(*args)
-                    print(**kwargs)
+                    self._logger.debug(f"Phanos - before root execution")
                     self._before_root_func(*args, **kwargs)
-
+                self._logger.debug(f"Phanos - before func execution")
                 self._before_func(*args, **kwargs)
 
             result = func(*args, **kwargs)
 
             if self._handlers and self.handle_records:
+                self._logger.debug(f"Phanos - after func execution")
                 self._after_func(*args, **kwargs)
 
                 if self.current_node.parent == self._root:
+                    self._logger.debug(f"Phanos - after root execution")
                     self._after_root_func(*args, **kwargs)
                     self.handle_records_clear()
 
@@ -445,6 +452,7 @@ class PhanosProfiler:
             self.time_profile.store_operation(
                 operation="stop", method=self.current_node.context, label_values={}
             )
+            self._logger.debug(f"Phanos - {self.time_profile.name} recorded operation ")
         # custom
         if callable(self.after_func):
             self.after_func(fn_result=fn_result, *args, **kwargs)
@@ -455,5 +463,8 @@ class PhanosProfiler:
         for metric in self._metrics.values():
             records = metric.to_records()
             for handler in self._handlers.values():
+                self._logger.debug(
+                    f"Phanos - handler {handler.handler_name} handling metric {metric.name}"
+                )
                 handler.handle(records, metric.name)
             metric.cleanup()

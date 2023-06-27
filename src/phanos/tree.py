@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import typing
 
 
@@ -14,7 +15,13 @@ class MethodTree:
     method: typing.Optional[typing.Callable]
     context: str
 
-    def __init__(self, method: typing.Optional[typing.Callable] = None) -> None:
+    _logger: logging.Logger
+
+    def __init__(
+        self,
+        method: typing.Optional[typing.Callable] = None,
+        logger: typing.Optional[logging.Logger] = None,
+    ) -> None:
         """Set method and nodes context
 
         :param method: method, which was decorated with @profile if None then root node
@@ -27,6 +34,8 @@ class MethodTree:
         if method is not None:
             self.method = method
             self.context = method.__name__
+
+        self._logger = logger or logging.getLogger(__name__)
 
     def add_child(self, child: MethodTree) -> MethodTree:
         """Add child to method tree node
@@ -43,19 +52,27 @@ class MethodTree:
         else:
             child.context = self.context + "." + child.context
         self.children.append(child)
+        self._logger.debug(f"Phanos - node {self.context} added child: {child.context}")
         return child
 
     def delete_child(self) -> None:
         """Delete first child of node"""
         child = self.children.pop(0)
         child.parent = None
+        self._logger.debug(
+            f"Phanos - node {self.context} deleted child: {child.context}"
+        )
 
     def clear_tree(self) -> None:
         """Clears tree of all nodes from self"""
         for child in self.children:
             child.clear_tree()
         self.parent = None
+        children = []
+        for child in self.children:
+            children.append(child.context)
         self.children.clear()
+        self._logger.debug(f"Phanos - node {self.context} deleted children: {children}")
 
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:
