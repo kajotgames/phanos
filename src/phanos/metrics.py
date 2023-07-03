@@ -298,6 +298,7 @@ class Info(MetricWrapper):
         _ = args
         _ = kwargs
         if not isinstance(value, dict):
+            logging.error("Phanos - Metric info value must be dict")
             raise ValueError("Value must be dictionary")
         self._values.append(("info", value))
 

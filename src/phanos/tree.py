@@ -67,6 +67,9 @@ class MethodTree:
         """Clears tree of all nodes from self"""
         for child in self.children:
             child.clear_tree()
+        self._clear_children()
+
+    def _clear_children(self):
         self.parent = None
         children = []
         for child in self.children:

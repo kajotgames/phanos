@@ -31,6 +31,10 @@ from src.phanos.metrics import (
 
 
 class TestTree(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        phanos_profiler.config()
+
     def tearDown(self) -> None:
         pass
 
@@ -70,7 +74,20 @@ class TestTree(unittest.TestCase):
         first = MethodTree(self.tearDown)
         root.add_child(first)
         self.assertEqual(first.context, "TestTree:tearDown")
-        root.delete_child()
+
+    def test_clear_tree(self):
+        root = phanos_profiler._root
+        _1 = MethodTree(self.tearDown)
+        root.add_child(_1)
+        self.assertEqual(_1.context, "TestTree:tearDown")
+        _1.add_child(MethodTree(self.tearDown))
+        _1.add_child(MethodTree(self.tearDown))
+        _1.add_child(MethodTree(self.tearDown))
+        with patch.object(MethodTree, "_clear_children") as mock:
+            phanos_profiler.clear()
+
+        mock.assert_any_call()
+        self.assertEqual(mock.call_count, 5)
 
 
 class TestHandlers(unittest.TestCase):
