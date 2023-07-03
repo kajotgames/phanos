@@ -30,25 +30,18 @@ class OutputFormatter:
         :param record: metric record which to convert
         """
         value = record["value"][1]
-        if record.get("labels") is not None and len(record["labels"]) > 0:
-            labels = ", labels: "
-            for label_name, label_value in record["labels"].items():
-                labels += label_name + " = " + label_value + ", "
-            labels = labels[:-2]
-        else:
-            labels = ""
-
-        return (
-            "profiler: "
-            + name
-            + ", method: "
-            + record.get("method")
-            + ", value: "
-            + str(value)
-            + " "
-            + record.get("units")
-            + labels
+        if not record.get("labels"):
+            return f"profiler: {name}, " \
+                   f"method: {record.get('method')}, " \
+                   f"value: {value} {record.get('units')}"
+        # format labels as this "key=value, key2=value2"
+        labels = ", ".join(
+            f"{k}={v}" for k, v in record["labels"].items()
         )
+        return f"profiler: {name}, " \
+               f"method: {record.get('method')}, " \
+               f"value: {value} {record.get('units')}, " \
+               f"labels: {labels}"
 
 
 class BaseHandler:
