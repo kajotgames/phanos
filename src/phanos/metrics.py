@@ -7,9 +7,10 @@ from datetime import datetime as dt
 
 from flask import current_app as app
 from imp_prof import Record
+from . import log
 
 
-class MetricWrapper:
+class MetricWrapper(log.InstanceLoggerMixin):
     """Wrapper around all Prometheus metric types"""
 
     name: str
@@ -22,8 +23,6 @@ class MetricWrapper:
     _label_values: typing.List[typing.Dict[str, str]]
     operations: typing.Dict[str, typing.Callable]
     default_operation: str
-
-    _logger: logging.Logger
 
     def __init__(
         self,
@@ -50,7 +49,7 @@ class MetricWrapper:
         self._label_values = []
         self.operations = {}
         self.default_operation = ""
-        self._logger = logger or logging.getLogger(__name__)
+        super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
 
     def to_records(self) -> typing.List[Record]:
         """Convert measured values into Type Record
@@ -130,9 +129,7 @@ class MetricWrapper:
             if operation is None:
                 operation = self.default_operation
             self.method.append(method)
-            self._logger.debug(
-                f"Phanos - metric {self.name} stored operation {operation}, value {value}",
-            )
+            self.debug("metric %s stored operation %s, value %s", self.name, operation, value)
             self.operations[operation](value, args, kwargs)
         except KeyError as exc:
             raise ValueError("Unknown operation") from exc
@@ -147,7 +144,7 @@ class MetricWrapper:
             self.method.clear()
         if self.item is not None:
             self.item.clear()
-        self._logger.debug(f"Phanos - metric {self.name} cleared")
+        self.debug("metric %s cleared", self.name)
 
 
 class Histogram(MetricWrapper):

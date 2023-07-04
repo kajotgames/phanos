@@ -1,4 +1,5 @@
 from . import (
+    log,
     publisher,
     tree,
     metrics,

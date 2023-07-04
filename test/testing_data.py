@@ -43,7 +43,7 @@ test_handler_in_no_lbl = (
         "value": ("observe", 2.0),
     },
 )
-test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test = value\n"
+test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test=value\n"
 test_handler_out_no_lbl = (
     "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS\n"
 )

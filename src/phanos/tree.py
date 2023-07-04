@@ -3,9 +3,10 @@ from __future__ import annotations
 import inspect
 import logging
 import typing
+from . import log
 
 
-class MethodTree:
+class MethodTree(log.InstanceLoggerMixin):
     """
     Tree for storing method calls context
     """
@@ -14,8 +15,6 @@ class MethodTree:
     children: typing.List[MethodTree]
     method: typing.Optional[typing.Callable]
     context: str
-
-    _logger: logging.Logger
 
     def __init__(
         self,
@@ -26,6 +25,7 @@ class MethodTree:
 
         :param method: method, which was decorated with @profile if None then root node
         """
+        super().__init__(logged_name="phanos", logger=logger)
         self.children = []
         self.parent = None
         self.method = None
@@ -34,8 +34,6 @@ class MethodTree:
         if method is not None:
             self.method = method
             self.context = method.__name__
-
-        self._logger = logger or logging.getLogger(__name__)
 
     def add_child(self, child: MethodTree) -> MethodTree:
         """Add child to method tree node
@@ -52,16 +50,14 @@ class MethodTree:
         else:
             child.context = self.context + "." + child.context
         self.children.append(child)
-        self._logger.debug(f"Phanos - node {self.context} added child: {child.context}")
+        self.debug(f"node {self.context} added child: {child.context}")
         return child
 
     def delete_child(self) -> None:
         """Delete first child of node"""
         child = self.children.pop(0)
         child.parent = None
-        self._logger.debug(
-            f"Phanos - node {self.context} deleted child: {child.context}"
-        )
+        self.debug(f"node {self.context} deleted child: {child.context}")
 
     def clear_tree(self) -> None:
         """Clears tree of all nodes from self"""
@@ -75,7 +71,7 @@ class MethodTree:
         for child in self.children:
             children.append(child.context)
         self.children.clear()
-        self._logger.debug(f"Phanos - node {self.context} deleted children: {children}")
+        self.debug(f"node {self.context} deleted children: {children}")
 
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:

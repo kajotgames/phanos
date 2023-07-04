@@ -595,7 +595,7 @@ class TestProfiling(unittest.TestCase):
             line = logs[i].split(", ")
             method = line[1][8:]
             value = line[2][7:10]
-            place = line[3][16:-1]
+            place = line[3][14:-1]
             self.assertEqual(method, testing_data.custom_profile_out[i]["method"])
             self.assertEqual(float(value), testing_data.custom_profile_out[i]["value"])
             self.assertEqual(place, testing_data.custom_profile_out[i]["place"])
