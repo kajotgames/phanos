@@ -12,7 +12,7 @@ import imp_prof.messaging.publisher
 from imp_prof.messaging.publisher import BlockingPublisher
 
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
-from .tree import MethodTree
+from .tree import MethodTreeNode
 from . import log
 
 TIME_PROFILER = "time_profiler"
@@ -31,17 +31,19 @@ class OutputFormatter:
         """
         value = record["value"][1]
         if not record.get("labels"):
-            return f"profiler: {name}, " \
-                   f"method: {record.get('method')}, " \
-                   f"value: {value} {record.get('units')}"
+            return (
+                f"profiler: {name}, "
+                f"method: {record.get('method')}, "
+                f"value: {value} {record.get('units')}"
+            )
         # format labels as this "key=value, key2=value2"
-        labels = ", ".join(
-            f"{k}={v}" for k, v in record["labels"].items()
+        labels = ", ".join(f"{k}={v}" for k, v in record["labels"].items())
+        return (
+            f"profiler: {name}, "
+            f"method: {record.get('method')}, "
+            f"value: {value} {record.get('units')}, "
+            f"labels: {labels}"
         )
-        return f"profiler: {name}, " \
-               f"method: {record.get('method')}, " \
-               f"value: {value} {record.get('units')}, " \
-               f"labels: {labels}"
 
 
 class BaseHandler:
@@ -67,7 +69,7 @@ class BaseHandler:
         raise NotImplementedError
 
 
-class RabbitMQHandler(BaseHandler):
+class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
     _publisher: BlockingPublisher
@@ -93,16 +95,24 @@ class RabbitMQHandler(BaseHandler):
          sets logger and create time profiler and response size profiler
 
         :param handler_name: name of handler. used for managing handlers
-        :param host: RabbitMQ server host
-        :param port: RabbitMQ server port
-        :param user: RabbitMQ username
-        :param password: RabbitMQ user password
-        :param heartbeat:
-        :param timeout:
-        :param retry_delay:
-        :param retry:
-        :param exchange_name:
-        :param exchange_type:
+        :param host: rabbitMQ server host
+        :param port: rabbitMQ server port
+        :param user: rabbitMQ login username
+        :param password: rabbitMQ user password
+        :param exchange_name: exchange name to bind queue with
+        :param exchange_type: exchange type to bind queue with
+        :param logger: loging object to use
+        :param retry: how many times to retry publish event
+        :param int|float retry_delay: Time to wait in seconds, before the next
+        :param timeout: If not None,
+            the value is a non-negative timeout, in seconds, for the
+            connection to remain blocked (triggered by Connection.Blocked from
+            broker); if the timeout expires before connection becomes unblocked,
+            the connection will be torn down, triggering the adapter-specific
+            mechanism for informing client app about the closed connection (
+            e.g., on_close_callback or ConnectionClosed exception) with
+            `reason_code` of `InternalCloseReasons.BLOCKED_CONNECTION_TIMEOUT`.
+        :param kwargs: other connection params, like `timeout goes here`
         :param logger: logger
         """
         super().__init__(handler_name)
@@ -126,10 +136,11 @@ class RabbitMQHandler(BaseHandler):
             self._publisher.connect()
         except imp_prof.messaging.publisher.NETWORK_ERRORS as err:
             self._logger.error(
-                f"RabbitMQHandler cannot connect to RabbitMQ because of {err}"
+                f"ImpProfHandler cannot connect to RabbitMQ because of {err}"
             )
             raise RuntimeError("Cannot connect to RabbitMQ") from err
-        self._logger.info("RabbitMQHandler created successfully")
+
+        self._logger.info("ImpProfHandler created successfully")
         self._publisher.close()
 
     def handle(
@@ -230,10 +241,11 @@ class StreamHandler(BaseHandler):
 
 class PhanosProfiler(log.InstanceLoggerMixin):
     """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
+
     _metrics: typing.Dict[str, MetricWrapper]
 
-    _root: MethodTree
-    current_node: MethodTree
+    _root: MethodTreeNode
+    current_node: MethodTreeNode
 
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
@@ -285,7 +297,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             self.create_response_size_profiler()
         self.handle_records = handle_records
 
-        self._root = MethodTree(None, self.logger)
+        self._root = MethodTreeNode(None, self.logger)
         self.current_node = self._root
 
     def create_time_profiler(self) -> None:
@@ -376,7 +388,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         def inner(*args, **kwargs) -> typing.Any:
             if self._handlers and self.handle_records:
                 self.current_node = self.current_node.add_child(
-                    MethodTree(func, self.logger)
+                    MethodTreeNode(func, self.logger)
                 )
 
                 if self.current_node.parent == self._root:
@@ -455,6 +467,8 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         for metric in self._metrics.values():
             records = metric.to_records()
             for handler in self._handlers.values():
-                self.debug(f"handler %s handling metric %s", handler.handler_name, metric.name)
+                self.debug(
+                    f"handler %s handling metric %s", handler.handler_name, metric.name
+                )
                 handler.handle(records, metric.name)
             metric.cleanup()

@@ -12,11 +12,11 @@ from flask.testing import FlaskClient
 from src.phanos import phanos_profiler, publisher
 from src.phanos.publisher import (
     StreamHandler,
-    RabbitMQHandler,
+    ImpProfHandler,
     LoggerHandler,
     BaseHandler,
 )
-from src.phanos.tree import MethodTree
+from src.phanos.tree import MethodTreeNode
 from test import testing_data, dummy_api
 from test.dummy_api import app, dummy_method, DummyDbAccess
 from src.phanos.metrics import (
@@ -39,9 +39,9 @@ class TestTree(unittest.TestCase):
         pass
 
     def test_tree(self):
-        root = MethodTree()
+        root = MethodTreeNode()
         # classmethod
-        first = MethodTree(dummy_api.DummyDbAccess.test_class)
+        first = MethodTreeNode(dummy_api.DummyDbAccess.test_class)
         root.add_child(first)
         self.assertEqual(first.parent, root)
         self.assertEqual(root.children, [first])
@@ -50,40 +50,40 @@ class TestTree(unittest.TestCase):
         self.assertEqual(root.children, [])
         self.assertEqual(first.parent, None)
         # method
-        first = MethodTree(dummy_api.DummyDbAccess.test_method)
+        first = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
         root.add_child(first)
         self.assertEqual(first.context, "DummyDbAccess:test_method")
         root.delete_child()
         # function
-        first = MethodTree(dummy_method)
+        first = MethodTreeNode(dummy_method)
         root.add_child(first)
         self.assertEqual(first.context, "dummy_api:dummy_method")
         root.delete_child()
         # descriptor
         access = DummyDbAccess()
-        first = MethodTree(access.__getattribute__)
+        first = MethodTreeNode(access.__getattribute__)
         root.add_child(first)
         self.assertEqual(first.context, "object:__getattribute__")
         root.delete_child()
         # staticmethod
-        first = MethodTree(access.test_static)
+        first = MethodTreeNode(access.test_static)
         root.add_child(first)
         self.assertEqual(first.context, "DummyDbAccess:test_static")
         root.delete_child()
 
-        first = MethodTree(self.tearDown)
+        first = MethodTreeNode(self.tearDown)
         root.add_child(first)
         self.assertEqual(first.context, "TestTree:tearDown")
 
     def test_clear_tree(self):
         root = phanos_profiler._root
-        _1 = MethodTree(self.tearDown)
+        _1 = MethodTreeNode(self.tearDown)
         root.add_child(_1)
         self.assertEqual(_1.context, "TestTree:tearDown")
-        _1.add_child(MethodTree(self.tearDown))
-        _1.add_child(MethodTree(self.tearDown))
-        _1.add_child(MethodTree(self.tearDown))
-        with patch.object(MethodTree, "_clear_children") as mock:
+        _1.add_child(MethodTreeNode(self.tearDown))
+        _1.add_child(MethodTreeNode(self.tearDown))
+        _1.add_child(MethodTreeNode(self.tearDown))
+        with patch.object(MethodTreeNode, "_clear_children") as mock:
             phanos_profiler.clear()
 
         mock.assert_any_call()
@@ -147,12 +147,12 @@ class TestHandlers(unittest.TestCase):
         self.assertEqual(phanos_profiler._handlers, {})
 
     def test_rabbit_handler_connection(self):
-        self.assertRaises(RuntimeError, RabbitMQHandler, "handle")
+        self.assertRaises(RuntimeError, ImpProfHandler, "handle")
 
     def test_rabbit_handler_publish(self):
         handler = None
         with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
-            handler = RabbitMQHandler("rabbit")
+            handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
 
             test_publish = handler._publisher.publish = MagicMock(return_value=3)

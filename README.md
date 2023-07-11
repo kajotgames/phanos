@@ -25,7 +25,7 @@ made automatically.
 2. Instantiate handlers you need for measured records at app construction.
    ```python      
    from phanos import phanos_profiler
-   from phanos.publisher import LoggerHandler, RabbitMQHandler
+   from phanos.publisher import LoggerHandler, ImpProfHandler
    # some code
    class SomeApp(Flask):
       """some code""" 
@@ -45,7 +45,7 @@ Records can be handled by these handlers:
  - `StreamHandler(handler_name, output)` - write records to given output (default is sys.stdout)
  - `LoggerHandler(handler_name, logger, level)` - logs string representation of records with given logger and with given level
 (default level is `logging.DEBUG`) 
- - `RabbitMQHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue of IMP_prof
+ - `ImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue of IMP_prof
 
 ## Phanos metrics:
 

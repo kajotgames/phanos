@@ -6,13 +6,13 @@ import typing
 from . import log
 
 
-class MethodTree(log.InstanceLoggerMixin):
+class MethodTreeNode(log.InstanceLoggerMixin):
     """
     Tree for storing method calls context
     """
 
-    parent: typing.Optional[MethodTree]
-    children: typing.List[MethodTree]
+    parent: typing.Optional[MethodTreeNode]
+    children: typing.List[MethodTreeNode]
     method: typing.Optional[typing.Callable]
     context: str
 
@@ -35,7 +35,7 @@ class MethodTree(log.InstanceLoggerMixin):
             self.method = method
             self.context = method.__name__
 
-    def add_child(self, child: MethodTree) -> MethodTree:
+    def add_child(self, child: MethodTreeNode) -> MethodTreeNode:
         """Add child to method tree node
 
         Adds child to tree node. Sets Context string of child node
