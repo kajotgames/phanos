@@ -37,6 +37,9 @@ class DummyDbAccess:
         self.first_access()
         sleep(0.3)
 
+    def third_access(self):
+        self.second_access()
+
 
 @ns.route("/one")
 class DummyResource(Resource):
@@ -55,3 +58,14 @@ api = Api(
     prefix="/api",
 )
 api.add_namespace(ns)
+
+if __name__ == "__main__":
+    from src.phanos import phanos_profiler
+    from src.phanos.publisher import LoggerHandler
+
+    phanos_profiler.config()
+    handler = LoggerHandler("asd")
+    phanos_profiler.add_handler(handler)
+    print("starting profle")
+    resource = DummyResource()
+    res = resource.get()

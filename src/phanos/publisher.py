@@ -360,7 +360,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param handler: handler instance
         """
         self._handlers[handler.handler_name] = handler
-        self.debug("handler {handler.handler_name} added to phanos profiler")
+        self.debug(f"handler {handler.handler_name} added to phanos profiler")
 
     def delete_handler(self, handler_name: str) -> None:
         """Delete handler from profiler
@@ -368,7 +368,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param handler_name: name of handler:
         """
         _ = self._handlers.pop(handler_name, None)
-        self.debug("handler {handler_name} deleted")
+        self.debug(f"handler {handler_name} deleted")
 
     def delete_handlers(self) -> None:
         """delete all handlers"""
