@@ -29,10 +29,13 @@ made automatically.
    # some code
    class SomeApp(Flask):
       """some code""" 
+   phanos_profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
    log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
    phanos_profiler.addHandler(log_handler)    
       # some code
    ```
+In `config` method you can select if you want to turn off  time profiling, response size profiling
+ or records handling. Default is turned on.
 After root method is executed all measured records are handled by all handlers added to
 `phanos_profiler`
 
