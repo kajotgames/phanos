@@ -427,7 +427,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 if self.current_node.parent == self._root:
                     self.debug("after root execution")
                     self._after_root_func(*args, **kwargs)
-                    self.handle_records_clear()
+                    self._handle_records_clear()
 
                 self.current_node = self.current_node.parent
                 self.current_node.delete_child()
@@ -481,7 +481,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         if callable(self.after_func):
             self.after_func(fn_result=fn_result, *args, **kwargs)
 
-    def handle_records_clear(self) -> None:
+    def _handle_records_clear(self) -> None:
         """Pass records to each registered Handler and clear stored records"""
         # send records and log em
         for metric in self._metrics.values():
@@ -492,4 +492,9 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 )
                 handler.handle(records, metric.name)
             metric.cleanup()
-            self._root.clear_tree()
+
+    def force_handle_records_clear(self) -> None:
+        """Method to force records handling with Method tree clear"""
+        # send records and log em
+        self._handle_records_clear()
+        self._root.clear_tree()
