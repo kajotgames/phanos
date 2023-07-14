@@ -48,40 +48,12 @@ class MethodTreeNode(log.InstanceLoggerMixin):
                 self.get_method_class(child.method) + ":" + child.context
             )  # child.method cannot be None
         else:
-            between = self._get_methods_between()
-            if between != "":
-                child.context = self.context + "." + between + "." + child.context
-            else:
-                child.context = self.context + "." + child.context
+            child.context = self.context + "." + child.context
         self.children.append(child)
         self.debug(
             f"{self.add_child.__qualname__}: node {self.context!r} added child: {child.context!r}"
         )
         return child
-
-    def _get_methods_between(self) -> str:
-        methods_between = []
-        split_context = self.context.split(".")
-        if len(split_context) == 1:
-            starting_method = self.context.split(":")[-1]
-        else:
-            starting_method = split_context[-1]
-        between = ""
-        if inspect.stack():
-            for item in inspect.stack():
-                if item.function == starting_method:
-                    break
-                if item.function not in [
-                    "<module>",
-                    "inner",
-                    "add_child",
-                    "_get_methods_between",
-                ]:
-                    methods_between.append(item.function)
-            methods_between.reverse()
-            between = ".".join(f"{method}" for method in methods_between)
-
-        return between
 
     def delete_child(self) -> None:
         """Delete first child of node"""
