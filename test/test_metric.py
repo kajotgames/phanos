@@ -202,6 +202,7 @@ class TestMetrics(unittest.TestCase):
                 "observe",
                 "asd",
             )
+            hist_no_lbl.cleanup()
             # valid operation
             hist_no_lbl.store_operation("test:method", "observe", 2.0),
             self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
@@ -216,7 +217,7 @@ class TestMetrics(unittest.TestCase):
                 "observe",
                 2.0,
             )
-
+            hist_w_lbl.cleanup()
             # default operation
             hist_w_lbl.store_operation(
                 method="test:method", value=2.0, label_values={"test": "test"}
@@ -254,6 +255,7 @@ class TestMetrics(unittest.TestCase):
                 "observe",
                 "asd",
             )
+            sum_no_lbl.cleanup()
             # valid operation
             sum_no_lbl.store_operation("test:method", "observe", 2.0),
             self.assertEqual(sum_no_lbl.to_records(), testing_data.sum_no_lbl)
@@ -297,6 +299,7 @@ class TestMetrics(unittest.TestCase):
                 "nonexistent",
                 2.0,
             )
+            cnt_no_lbl.cleanup()
 
             # valid operation
             cnt_no_lbl.store_operation("test:method", "inc", 2.0),
@@ -323,7 +326,7 @@ class TestMetrics(unittest.TestCase):
                 "nonexistent",
                 2.0,
             )
-
+            inf_no_lbl.cleanup()
             # valid operation
             inf_no_lbl.store_operation("test:method", "info", {"value": "asd"}),
             self.assertEqual(inf_no_lbl.to_records(), testing_data.inf_no_lbl)
@@ -383,7 +386,7 @@ class TestMetrics(unittest.TestCase):
                 "nonexistent",
                 2.0,
             )
-
+            gauge_no_lbl.cleanup()
             # valid operation
             gauge_no_lbl.store_operation("test:method", "inc", 2.0),
             gauge_no_lbl.store_operation("test:method", "dec", 2.0),
@@ -398,7 +401,7 @@ class TestMetrics(unittest.TestCase):
             )
             # invalid value
             self.assertRaises(
-                TypeError,
+                ValueError,
                 enum_no_lbl.store_operation,
                 "test:method",
                 "state",
@@ -412,9 +415,9 @@ class TestMetrics(unittest.TestCase):
                 "nonexistent",
                 "true",
             )
-
+            enum_no_lbl.cleanup()
             # valid operation
-            enum_no_lbl.store_operation("test", "state", "true")
+            enum_no_lbl.store_operation("test:method", "state", "true")
             self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
 
     def test_builtin_profilers(self):

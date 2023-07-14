@@ -54,7 +54,9 @@ class MethodTreeNode(log.InstanceLoggerMixin):
             else:
                 child.context = self.context + "." + child.context
         self.children.append(child)
-        self.debug(f"node {self.context} added child: {child.context}")
+        self.debug(
+            f"{self.add_child.__qualname__}: node {self.context!r} added child: {child.context!r}"
+        )
         return child
 
     def _get_methods_between(self) -> str:
@@ -83,9 +85,16 @@ class MethodTreeNode(log.InstanceLoggerMixin):
 
     def delete_child(self) -> None:
         """Delete first child of node"""
-        child = self.children.pop(0)
-        child.parent = None
-        self.debug(f"node {self.context} deleted child: {child.context}")
+        try:
+            child = self.children.pop(0)
+            child.parent = None
+            self.debug(
+                f"{self.delete_child.__qualname__}: node {self.context!r} deleted child: {child.context!r}"
+            )
+        except IndexError:
+            self.debug(
+                f"{self.delete_child.__qualname__}: node {self.context!r} do not have any children"
+            )
 
     def clear_tree(self) -> None:
         """Clears tree of all nodes from self"""
@@ -99,7 +108,9 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         for child in self.children:
             children.append(child.context)
         self.children.clear()
-        self.debug(f"node {self.context} deleted children: {children}")
+        self.debug(
+            f"{self._clear_children.__qualname__}: node {self.context!r} deleted children: {children}"
+        )
 
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:

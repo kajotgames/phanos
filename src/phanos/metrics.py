@@ -49,13 +49,24 @@ class MetricWrapper(log.InstanceLoggerMixin):
         self._label_values = []
         self.operations = {}
         self.default_operation = ""
-        super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
+        super().__init__(
+            logged_name="phanos", logger=logger or logging.getLogger(__name__)
+        )
 
     def to_records(self) -> typing.List[Record]:
         """Convert measured values into Type Record
 
-        :returns: List of records"""
+        :returns: List of records
+        :raises RuntimeError: if one of records would be incomplete
+        """
         records = []
+        if not (len(self.method) == len(self._values) == len(self._label_values)):
+            self.error(
+                f"{self.to_records.__qualname__}: one of records missing method || value || label_values"
+            )
+            raise RuntimeError(
+                f"{len(self.method)}, {len(self._values)}, {len(self._label_values)}"
+            )
         for i in range(len(self._values)):
             label_value = (
                 self._label_values[i] if self._label_values is not None else {}
@@ -122,20 +133,30 @@ class MetricWrapper(log.InstanceLoggerMixin):
             label_values = {}
         try:
             labels_ok = self._check_labels(list(label_values.keys()))
-            if labels_ok and label_values is not None:
+            if labels_ok:
                 self._label_values.append(label_values)
             else:
+                self.error(
+                    f"{self.store_operation.__qualname__}: expected labels: {self.label_names}, "
+                    f"labels given: {label_values.keys()}"
+                )
                 raise ValueError("Unknown or missing label")
             if operation is None:
                 operation = self.default_operation
             self.method.append(method)
-            self.debug("metric %s stored operation %s, value %s", self.name, operation, value)
+            self.debug(
+                "metric %s stored operation %s, value %s", self.name, operation, value
+            )
             self.operations[operation](value, args, kwargs)
         except KeyError as exc:
+            self.error(
+                f"{self.store_operation.__qualname__}: operation {operation} unknown."
+                f"Known operations: {self.operations.keys()}"
+            )
             raise ValueError("Unknown operation") from exc
 
     def cleanup(self) -> None:
-        """Cleanup after metrics was sent"""
+        """Cleanup after all records was sent"""
         if self._values is not None:
             self._values.clear()
         if self._label_values is not None:
@@ -144,7 +165,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
             self.method.clear()
         if self.item is not None:
             self.item.clear()
-        self.debug("metric %s cleared", self.name)
+        self.debug("%s: metric %s cleared", self.cleanup.__qualname__, self.name)
 
 
 class Histogram(MetricWrapper):
@@ -176,10 +197,12 @@ class Histogram(MetricWrapper):
         """Method representing observe action of Histogram
 
         :param value: measured value
+        :raises ValueError: if value is not float
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float):
+            self.error(f"{self._observe.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
         self._values.append(("observe", value))
 
@@ -213,10 +236,12 @@ class Summary(MetricWrapper):
         """Method representing observe action of Summary
 
         :param value: measured value
+        :raises ValueError: if value is not float
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float):
+            self.error(f"{self._observe.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
         self._values.append(("observe", value))
 
@@ -250,11 +275,13 @@ class Counter(MetricWrapper):
         """Method representing inc action of counter
 
         :param value: measured value
+        :raises ValueError: if value is not float >= 0
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float) or value < 0:
-            raise TypeError("Value must be float > 0")
+            self.error(f"{self._inc.__qualname__}: accepts only float values >= 0")
+            raise TypeError("Value must be float >= 0")
         self._values.append(("inc", value))
 
 
@@ -291,11 +318,12 @@ class Info(MetricWrapper):
         """Method representing info action of info
 
         :param value: measured value
+        :raises ValueError: if value is not dictionary
         """
         _ = args
         _ = kwargs
         if not isinstance(value, dict):
-            logging.error("Phanos - Metric info value must be dict")
+            self.error(f"{self._info.__qualname__}: accepts only dictionary values")
             raise ValueError("Value must be dictionary")
         self._values.append(("info", value))
 
@@ -333,10 +361,12 @@ class Gauge(MetricWrapper):
         """Method representing inc action of gauge
 
         :param value: measured value
+        :raises ValueError: if value is not float >= 0
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float) or value < 0:
+            self.error(f"{self._inc.__qualname__}: accepts only float values >= 0")
             raise TypeError("Value must be float >= 0")
         self._values.append(("inc", value))
 
@@ -344,10 +374,12 @@ class Gauge(MetricWrapper):
         """Method representing dec action of gauge
 
         :param value: measured value
+        :raises ValueError: if value is not float >= 0
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float) or value < 0:
+            self.error(f"{self._dec.__qualname__}: accepts only float values >= 0")
             raise TypeError("Value must be float >= 0")
         self._values.append(("dec", value))
 
@@ -355,10 +387,12 @@ class Gauge(MetricWrapper):
         """Method representing set action of gauge
 
         :param value: measured value
+        :raises ValueError: if value is not float
         """
         _ = args
         _ = kwargs
         if not isinstance(value, float):
+            self.error(f"{self._set.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
         self._values.append(("set", value))
 
@@ -403,9 +437,11 @@ class Enum(MetricWrapper):
         _ = args
         _ = kwargs
         if value not in self.states:
-            raise TypeError(
-                f"State  {value} not allowed for this Enum. Allowed values: {self.states}"
+            self.warning(
+                f"{self._state.__qualname__}: state  {value!r} not allowed for Enum {self.name!r}. "
+                f"Allowed values: {self.states!r}"
             )
+            raise ValueError("Invalid state for Enum metric")
         self._values.append(("state", value))
 
 
@@ -426,22 +462,31 @@ class TimeProfiler(Histogram):
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
+        :raises RuntimeError: if start timestamps < number of stop measurement operation
         """
         super().__init__(name, "mS", labels, logger)
         self.operations = {"stop": self._stop}
         self.default_operation = "stop"
         self._start_ts = []
+        self.debug("TimeProfiler metric initialized")
 
     # ############################### measurement operations -> checking labels, not sending records
     def _stop(self, *args, **kwargs) -> None:
         """Records time difference between last start_ts and now"""
         _ = args
         _ = kwargs
-        method_time = dt.now() - self._start_ts.pop(-1)
-
-        self._observe(
-            method_time.total_seconds() * 1000.0,
-        )
+        try:
+            method_time = dt.now() - self._start_ts.pop(-1)
+            self._observe(
+                method_time.total_seconds() * 1000.0,
+            )
+        except IndexError:
+            self.error(
+                f"{self._stop.__qualname__}: Cannot record operation. No start ts exists."
+            )
+            raise RuntimeError(
+                "Number of start timestamps < number of stop measurement operations"
+            )
 
     # ############################### helper operations -> not checking labels, not checking records
     def start(self, *args, **kwargs) -> None:
@@ -452,7 +497,7 @@ class TimeProfiler(Histogram):
 
     def cleanup(self) -> None:
         """Method responsible for cleanup after publishing records"""
-        self._start_ts = []
+        self._start_ts.clear()
         super().cleanup()
 
 
@@ -474,6 +519,7 @@ class ResponseSize(Histogram):
         super().__init__(name, "B", labels, logger)
         self.operations = {"rec": self._rec}
         self.default_operation = "rec"
+        self.debug("ResponseSize metric initialized")
 
     def _rec(self, value: str, *args, **kwargs) -> None:
         """records size of response"""

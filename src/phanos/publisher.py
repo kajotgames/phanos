@@ -310,13 +310,19 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         """create response size profiling metric"""
         self.resp_size_profile = ResponseSize(RESPONSE_SIZE, logger=self.logger)
         self.add_metric(self.resp_size_profile)
-        self.debug("response size profiler created")
+        self.debug("Phanos - response size profiler created")
 
     def delete_metric(self, item: str) -> None:
         """deletes one metric instance
         :param item: name of the metric instance
+        :raises KeyError: if metric does not exist
         """
-        _ = self._metrics.pop(item, None)
+        try:
+            _ = self._metrics.pop(item)
+        except KeyError:
+            self.error(f"{self.delete_metric.__qualname__}: metric {item} do not exist")
+            raise KeyError(f"metric {item} do not exist")
+
         if item == "time_profiler":
             self.time_profile = None
         if item == "response_size":
@@ -351,23 +357,38 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         :param metric: metric instance
         """
+        if self._metrics.get(metric.name, None):
+            self.warning(
+                f"Metric {metric.name} already exist. Overwriting with new metric"
+            )
         self._metrics[metric.name] = metric
-        self.debug(f"metric {metric.name} added")
+        self.debug(f"Metric {metric.name} added to phanos profiler")
 
     def add_handler(self, handler: BaseHandler) -> None:
         """Add handler to profiler
 
         :param handler: handler instance
         """
+        if self._handlers.get(handler.handler_name, None):
+            self.warning(
+                f"Handler {handler.handler_name} already exist. Overwriting with new handler"
+            )
         self._handlers[handler.handler_name] = handler
-        self.debug(f"handler {handler.handler_name} added to phanos profiler")
+        self.debug(f"Handler {handler.handler_name} added to phanos profiler")
 
     def delete_handler(self, handler_name: str) -> None:
         """Delete handler from profiler
 
         :param handler_name: name of handler:
+        :raises KeyError: if handler do not exist
         """
-        _ = self._handlers.pop(handler_name, None)
+        try:
+            _ = self._handlers.pop(handler_name)
+        except KeyError:
+            self.error(
+                f"{self.delete_handler.__qualname__}: handler {handler_name} do not exist"
+            )
+            raise KeyError(f"handler {handler_name} do not exist")
         self.debug(f"handler {handler_name} deleted")
 
     def delete_handlers(self) -> None:
@@ -419,10 +440,10 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         :param function: root function
         """
-        # custom
+        # users custom metrics operation recording
         if callable(self.before_root_func):
             self.before_root_func(function=function, *args, **kwargs)
-        # here mine if needed
+        # place for phanos metrics if needed
 
     def _after_root_func(self, fn_result: typing.Any, *args, **kwargs) -> None:
         """method executing after the root function
@@ -430,7 +451,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         :param fn_result: result of function
         """
-        # mine
+        # phanos metrics
         if self.resp_size_profile:
             self.resp_size_profile.store_operation(
                 operation="rec",
@@ -438,26 +459,25 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 value=fn_result,
                 label_values={},
             )
-        # user custom function
+        # users custom metrics operation recording
         if callable(self.after_root_func):
             self.after_root_func(fn_result=fn_result, *args, **kwargs)
 
     def _before_func(self, func, *args, **kwargs) -> None:
-        # user custom
+        # users custom metrics operation recording
         if callable(self.before_func):
             self.before_func(function=func, *args, **kwargs)
-        # mine
+        # phanos metrics
         if self.time_profile:
             self.time_profile.start()
 
     def _after_func(self, fn_result: typing.Any, *args, **kwargs) -> None:
-        # mine
+        # phanos metrics
         if self.time_profile:
             self.time_profile.store_operation(
                 operation="stop", method=self.current_node.context, label_values={}
             )
-            self.debug(f"{self.time_profile.name} recorded operation ")
-        # custom
+        # users custom metrics operation recording
         if callable(self.after_func):
             self.after_func(fn_result=fn_result, *args, **kwargs)
 
