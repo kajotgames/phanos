@@ -268,7 +268,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         self._metrics = {}
         self._handlers = {}
 
-        self.request_size_profile = None
+        self.resp_size_profile = None
         self.time_profile = None
 
         self.before_func = None
