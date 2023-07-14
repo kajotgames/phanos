@@ -492,3 +492,4 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 )
                 handler.handle(records, metric.name)
             metric.cleanup()
+            self._root.clear_tree()

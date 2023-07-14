@@ -144,9 +144,6 @@ class MetricWrapper(log.InstanceLoggerMixin):
             if operation is None:
                 operation = self.default_operation
             self.method.append(method)
-            self.debug(
-                "metric %s stored operation %s, value %s", self.name, operation, value
-            )
             self.operations[operation](value, args, kwargs)
         except KeyError as exc:
             self.error(
