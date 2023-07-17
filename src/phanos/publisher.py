@@ -417,8 +417,12 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                     self._before_root_func(*args, **kwargs)
                 self.debug("before func execution")
                 self._before_func(*args, **kwargs)
-
-            result = func(*args, **kwargs)
+            try:
+                result = func(*args, **kwargs)
+            except Exception as e:
+                # in case of exception handle measured records, cleanup and rerasise
+                self.force_handle_records_clear()
+                raise e
 
             if self._handlers and self.handle_records:
                 self.debug("after func execution")
