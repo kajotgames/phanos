@@ -498,7 +498,12 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             metric.cleanup()
 
     def force_handle_records_clear(self) -> None:
-        """Method to force records handling with Method tree clear"""
+        """Method to force records handling
+
+        forces record handling. As side effect clears all metrics and clears MethodContext tree
+        """
         # send records and log em
+        self.debug("Forcing record handling")
         self._handle_records_clear()
+        self.current_node = self._root
         self._root.clear_tree()
