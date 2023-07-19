@@ -31,11 +31,7 @@ class OutputFormatter:
         """
         value = record["value"][1]
         if not record.get("labels"):
-            return (
-                f"profiler: {name}, "
-                f"method: {record.get('method')}, "
-                f"value: {value} {record.get('units')}"
-            )
+            return f"profiler: {name}, " f"method: {record.get('method')}, " f"value: {value} {record.get('units')}"
         # format labels as this "key=value, key2=value2"
         labels = ", ".join(f"{k}={v}" for k, v in record["labels"].items())
         return (
@@ -47,7 +43,7 @@ class OutputFormatter:
 
 
 class BaseHandler:
-    """ " base class for record handling"""
+    """base class for record handling"""
 
     handler_name: str
 
@@ -58,7 +54,9 @@ class BaseHandler:
 
     @abstractmethod
     def handle(
-        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
+        self,
+        records: typing.List[imp_prof.Record],
+        profiler_name: str = "profiler",
     ) -> None:
         """
         method for handling records
@@ -135,9 +133,7 @@ class ImpProfHandler(BaseHandler):
         try:
             self._publisher.connect()
         except imp_prof.messaging.publisher.NETWORK_ERRORS as err:
-            self._logger.error(
-                f"ImpProfHandler cannot connect to RabbitMQ because of {err}"
-            )
+            self._logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
         self._logger.info("ImpProfHandler created successfully")
@@ -190,18 +186,14 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self._formatter = OutputFormatter()
 
-    def handle(
-        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
-    ) -> None:
+    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
         :param records: list of records
         """
         for record in records:
-            self._logger.log(
-                self.level, self._formatter.record_to_str(profiler_name, record)
-            )
+            self._logger.log(self.level, self._formatter.record_to_str(profiler_name, record))
 
 
 class StreamHandler(BaseHandler):
@@ -222,9 +214,7 @@ class StreamHandler(BaseHandler):
         self._formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(
-        self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler"
-    ) -> None:
+    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -329,9 +319,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             self.resp_size_profile = None
         self.debug(f"metric {item} deleted")
 
-    def delete_metrics(
-        self, rm_time_profile: bool = False, rm_resp_size_profile: bool = False
-    ) -> None:
+    def delete_metrics(self, rm_time_profile: bool = False, rm_resp_size_profile: bool = False) -> None:
         """deletes all custom metric instances
 
         :param rm_time_profile: should pre created time_profiler be deleted
@@ -339,9 +327,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         """
         names = list(self._metrics.keys())
         for name in names:
-            if (name != TIME_PROFILER or rm_time_profile) and (
-                name != RESPONSE_SIZE or rm_resp_size_profile
-            ):
+            if (name != TIME_PROFILER or rm_time_profile) and (name != RESPONSE_SIZE or rm_resp_size_profile):
                 self.delete_metric(name)
 
     def clear(self):
@@ -358,9 +344,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param metric: metric instance
         """
         if self._metrics.get(metric.name, None):
-            self.warning(
-                f"Metric {metric.name} already exist. Overwriting with new metric"
-            )
+            self.warning(f"Metric {metric.name} already exist. Overwriting with new metric")
         self._metrics[metric.name] = metric
         self.debug(f"Metric {metric.name} added to phanos profiler")
 
@@ -370,9 +354,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param handler: handler instance
         """
         if self._handlers.get(handler.handler_name, None):
-            self.warning(
-                f"Handler {handler.handler_name} already exist. Overwriting with new handler"
-            )
+            self.warning(f"Handler {handler.handler_name} already exist. Overwriting with new handler")
         self._handlers[handler.handler_name] = handler
         self.debug(f"Handler {handler.handler_name} added to phanos profiler")
 
@@ -385,9 +367,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         try:
             _ = self._handlers.pop(handler_name)
         except KeyError:
-            self.error(
-                f"{self.delete_handler.__qualname__}: handler {handler_name} do not exist"
-            )
+            self.error(f"{self.delete_handler.__qualname__}: handler {handler_name} do not exist")
             raise KeyError(f"handler {handler_name} do not exist")
         self.debug(f"handler {handler_name} deleted")
 
@@ -408,9 +388,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         def inner(*args, **kwargs) -> typing.Any:
             if self._handlers and self.handle_records:
-                self.current_node = self.current_node.add_child(
-                    MethodTreeNode(func, self.logger)
-                )
+                self.current_node = self.current_node.add_child(MethodTreeNode(func, self.logger))
 
                 if self.current_node.parent == self._root:
                     self._before_root_func(*args, **kwargs)
@@ -418,7 +396,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
-                # in case of exception handle measured records, cleanup and rerasise
+                # in case of exception handle measured records, cleanup and reraise
                 self.force_handle_records_clear()
                 raise e
 
@@ -459,9 +437,6 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 value=fn_result,
                 label_values={},
             )
-            self.debug(
-                f"time_profiler stored value {self.resp_size_profile._values[-1]}"
-            )
         # users custom metrics operation recording
         if callable(self.after_root_func):
             self.after_root_func(fn_result=fn_result, *args, **kwargs)
@@ -477,9 +452,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
     def _after_func(self, fn_result: typing.Any, *args, **kwargs) -> None:
         # phanos metrics
         if self.time_profile:
-            self.time_profile.store_operation(
-                operation="stop", method=self.current_node.context, label_values={}
-            )
+            self.time_profile.store_operation(operation="stop", method=self.current_node.context, label_values={})
         # users custom metrics operation recording
         if callable(self.after_func):
             self.after_func(fn_result=fn_result, *args, **kwargs)
@@ -490,9 +463,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         for metric in self._metrics.values():
             records = metric.to_records()
             for handler in self._handlers.values():
-                self.debug(
-                    f"handler %s handling metric %s", handler.handler_name, metric.name
-                )
+                self.debug(f"handler %s handling metric %s", handler.handler_name, metric.name)
                 handler.handle(records, metric.name)
             metric.cleanup()
 

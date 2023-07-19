@@ -88,16 +88,17 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:
         """
-        Gets class/module name where specified method/function was defined.
+        Gets owner(class or module) name where specified method/function was defined.
 
         Cannot do: partial, lambda !!!!!
 
         Can do: rest
 
-        :param meth: method where to discover class
-        :return: class name where method was defined if was defined in class else module name
+        :param meth: method/function to inspect
+        :return: owner name where method was defined, owner could be class or module
         """
         if inspect.ismethod(meth):
+            # noinspection PyUnresolvedReferences
             for cls in inspect.getmro(meth.__self__.__class__):
                 if meth.__name__ in cls.__dict__:
                     return cls.__name__
@@ -110,7 +111,9 @@ class MethodTreeNode(log.InstanceLoggerMixin):
             )
             if isinstance(cls_, type):
                 return cls_.__name__
-        class_ = getattr(meth, "__objclass__", None)  # handle special descriptor objects
+        # noinspection SpellCheckingInspection
+        class_ = getattr(meth, "__objclass__", None)
+        # handle special descriptor objects
         if class_ is not None:
             return class_.__name__
         module = inspect.getmodule(meth)

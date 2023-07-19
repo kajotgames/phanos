@@ -1,4 +1,5 @@
 # PHANOS
+
 Python client to gather data for Prometheus logging in server with multiple instances and workers.
 
 ## Profiling
@@ -14,6 +15,7 @@ made automatically.
 ### Usage
 
 1. decorate methods from which you want to send metrics `@phanos_profiler.profile`
+
    ```python
    from phanos import phanos_profiler
    # some code
@@ -23,17 +25,19 @@ made automatically.
    ```
 
 2. Instantiate handlers you need for measured records at app construction.
-   ```python      
-   from phanos import phanos_profiler
-   from phanos.publisher import LoggerHandler, ImpProfHandler
-   # some code
-   class SomeApp(Flask):
+
+    ```python      
+    from phanos import phanos_profiler
+    from phanos.publisher import LoggerHandler, ImpProfHandler
+    # some code
+    class SomeApp(Flask):
       """some code""" 
-   phanos_profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
-   log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
-   phanos_profiler.addHandler(log_handler)    
-      # some code
-   ```
+    phanos_profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
+    log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
+    phanos_profiler.addHandler(log_handler)    
+    # some code
+    ```
+   
 In `config` method you can select if you want to turn off  time profiling, response size profiling
  or records handling. Default is turned on.
 After root method is executed all measured records are handled by all handlers added to
@@ -89,6 +93,7 @@ These classes represent Prometheus metrics without any modification.
 - after_root_func : callable - executes after each profiled root method (first method in profiling tree)
 
 Implement these methods with all your measurement. Example:
+
    ```python
    def before_function(function):
       # this operation will be recorded
@@ -108,7 +113,8 @@ Implement these methods with all your measurement. Example:
 `phanos_profiler` will record operation `"my_operation"` with value `measured_value` and given labels before
 each method decorated with `phanos_profiler.profile`.
 
-What must/can be done
+What must/can be done:
+
 - 'before_' functions must have 'function' parameter where function which is executed is passed.
 'after_' function needs to have 'fn_result' parameter where function result is passed
 - all four functions can access `*args` and `**kwargs` of decorated methods.

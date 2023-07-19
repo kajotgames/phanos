@@ -49,9 +49,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
         self._label_values = []
         self.operations = {}
         self.default_operation = ""
-        super().__init__(
-            logged_name="phanos", logger=logger or logging.getLogger(__name__)
-        )
+        super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
 
     def to_records(self) -> typing.List[Record]:
         """Convert measured values into Type Record
@@ -61,16 +59,10 @@ class MetricWrapper(log.InstanceLoggerMixin):
         """
         records = []
         if not (len(self.method) == len(self._values) == len(self._label_values)):
-            self.error(
-                f"{self.to_records.__qualname__}: one of records missing method || value || label_values"
-            )
-            raise RuntimeError(
-                f"{len(self.method)}, {len(self._values)}, {len(self._label_values)}"
-            )
+            self.error(f"{self.to_records.__qualname__}: one of records missing method || value || label_values")
+            raise RuntimeError(f"{len(self.method)}, {len(self._values)}, {len(self._label_values)}")
         for i in range(len(self._values)):
-            label_value = (
-                self._label_values[i] if self._label_values is not None else {}
-            )
+            label_value = self._label_values[i] if self._label_values is not None else {}
             record: Record = {
                 "item": self.method[i].split(":")[0],
                 "metric": self.metric,
@@ -151,6 +143,8 @@ class MetricWrapper(log.InstanceLoggerMixin):
                 f"Known operations: {self.operations.keys()}"
             )
             raise ValueError("Unknown operation") from exc
+        if self._values:
+            self.debug("%r stored value %s", self.name, self._values[-1])
 
     def cleanup(self) -> None:
         """Cleanup after all records was sent"""
@@ -309,9 +303,7 @@ class Info(MetricWrapper):
         self.default_operation = "info"
         self.operations = {"info": self._info}
 
-    def _info(
-        self, value: typing.Dict[typing.Any, typing.Any], *args, **kwargs
-    ) -> None:
+    def _info(self, value: typing.Dict[typing.Any, typing.Any], *args, **kwargs) -> None:
         """Method representing info action of info
 
         :param value: measured value
@@ -443,8 +435,8 @@ class Enum(MetricWrapper):
 
 
 class TimeProfiler(Histogram):
-    """class for measuring multiple time records in one endpoint.
-     Used for measuring time consuming operations
+    """Class for measuring multiple time records in one endpoint.
+    Used for measuring time-consuming operations
 
     measured unit is milliseconds
     """
@@ -478,12 +470,8 @@ class TimeProfiler(Histogram):
                 method_time.total_seconds() * 1000.0,
             )
         except IndexError:
-            self.error(
-                f"{self._stop.__qualname__}: Cannot record operation. No start ts exists."
-            )
-            raise RuntimeError(
-                "Number of start timestamps < number of stop measurement operations"
-            )
+            self.error(f"{self._stop.__qualname__}: Cannot record operation. No start ts exists.")
+            raise RuntimeError("Number of start timestamps < number of stop measurement operations")
 
     # ############################### helper operations -> not checking labels, not checking records
     def start(self, *args, **kwargs) -> None:
