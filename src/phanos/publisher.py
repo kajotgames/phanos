@@ -413,9 +413,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 )
 
                 if self.current_node.parent == self._root:
-                    self.debug("before root execution")
                     self._before_root_func(*args, **kwargs)
-                self.debug("before func execution")
                 self._before_func(*args, **kwargs)
             try:
                 result = func(*args, **kwargs)
@@ -425,11 +423,9 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 raise e
 
             if self._handlers and self.handle_records:
-                self.debug("after func execution")
                 self._after_func(*args, **kwargs)
 
                 if self.current_node.parent == self._root:
-                    self.debug("after root execution")
                     self._after_root_func(*args, **kwargs)
                     self._handle_records_clear()
 
@@ -462,6 +458,9 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 method=self.current_node.context,
                 value=fn_result,
                 label_values={},
+            )
+            self.debug(
+                f"time_profiler stored value {self.resp_size_profile._values[-1]}"
             )
         # users custom metrics operation recording
         if callable(self.after_root_func):
