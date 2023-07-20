@@ -219,9 +219,7 @@ class TestMetrics(unittest.TestCase):
             )
             hist_w_lbl.cleanup()
             # default operation
-            hist_w_lbl.store_operation(
-                method="test:method", value=2.0, label_values={"test": "test"}
-            )
+            hist_w_lbl.store_operation(method="test:method", value=2.0, label_values={"test": "test"})
             self.assertEqual(hist_w_lbl.to_records(), testing_data.hist_w_lbl)
 
     def test_summary(self):
@@ -550,7 +548,7 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.TIME_PROFILER)
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
-        def before_root_func(function):
+        def before_root_func(*args, func=None, **kwargs):
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -560,7 +558,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_root_func = before_root_func
 
-        def before_func(function):
+        def before_func(*args, func=None, **kwargs):
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -570,7 +568,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_func = before_func
 
-        def after_func(fn_result):
+        def after_func(*args, fn_result=None, **kwargs):
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -580,7 +578,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.after_func = after_func
 
-        def after_root_func(fn_result):
+        def after_root_func(*args, fn_result=None, **kwargs):
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,

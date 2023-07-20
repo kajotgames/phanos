@@ -2,17 +2,32 @@ from abc import abstractmethod
 from functools import partial
 from time import sleep
 
-
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
 
 from src.phanos import phanos_profiler
+from src.phanos.publisher import LoggerHandler
 
 ns = Namespace("dummy")
 
 
 def dummy_method():
     pass
+
+
+@phanos_profiler.profile
+def test_inside_list_comp():
+    return 5
+
+
+@phanos_profiler.profile
+def test_list_comp():
+    _ = [test_inside_list_comp() for i in range(1)]
+    y = lambda a: test_inside_list_comp() + a
+    _ = y(1)
+    x = (test_inside_list_comp() ** 2 for i in range(1))
+    for i in x:
+        _ = i
 
 
 class DummyDbAccess:
@@ -60,12 +75,8 @@ api = Api(
 api.add_namespace(ns)
 
 if __name__ == "__main__":
-    from src.phanos import phanos_profiler
-    from src.phanos.publisher import LoggerHandler
-
     phanos_profiler.config()
     handler = LoggerHandler("asd")
     phanos_profiler.add_handler(handler)
-    print("starting profle")
-    resource = DummyResource()
-    res = resource.get()
+    print("starting profile")
+    _ = test_list_comp()
