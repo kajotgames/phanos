@@ -33,7 +33,7 @@ made automatically.
 2. Instantiate handlers you need for measured records at app construction.
 
     ```python      
-    improt phanos
+    import phanos
     from phanos.publisher import LoggerHandler, ImpProfHandler
     # some code
     class SomeApp(Flask):
