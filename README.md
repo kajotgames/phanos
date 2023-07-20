@@ -95,7 +95,7 @@ These classes represent Prometheus metrics without any modification.
 Implement these methods with all your measurement. Example:
 
    ```python
-   def before_function(function):
+   def before_function(*args, func=None, **kwargs):
       # this operation will be recorded
       my_metric.store_operation(
           operation="my_operation",
@@ -115,7 +115,7 @@ each method decorated with `phanos_profiler.profile`.
 
 What must/can be done:
 
-- 'before_' functions must have 'function' parameter where function which is executed is passed.
+- 'before_' functions must have 'func' parameter passed as kwarg where function which is executed is passed.
 'after_' function needs to have 'fn_result' parameter where function result is passed
 - all four functions can access `*args` and `**kwargs` of decorated methods.
 - Each 'store_operation' must have parameter `method=phanos_profiler.current_node.context` so 
