@@ -5,12 +5,9 @@ import sys
 import threading
 import typing
 from abc import abstractmethod
-from logging import Logger
 
 import imp_prof.messaging.publisher
-
 from imp_prof.messaging.publisher import BlockingPublisher
-
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
 from . import log
@@ -247,6 +244,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     _handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
+    _job: str
 
     def __init__(self) -> None:
         """Initialize ProfilesPublisher
@@ -257,6 +255,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         self._metrics = {}
         self._handlers = {}
+        self._job = ""
 
         self.resp_size_profile = None
         self.time_profile = None
@@ -269,18 +268,21 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def config(
         self,
+        job: str,
         logger=None,
         time_profile: bool = True,
         request_size_profile: bool = True,
         handle_records: bool = True,
     ) -> None:
         """configure PhanosProfiler
+        :param job: name of job
         :param logger: logger instance
         :param time_profile: should create instance time profiler
         :param request_size_profile: should create instance of request size profiler
         :param handle_records: should handle recorded records
         """
         self.logger = logger or logging.getLogger(__name__)
+        self._job = job
         if time_profile:
             self.create_time_profiler()
         if request_size_profile:
@@ -292,13 +294,13 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""
-        self.time_profile = TimeProfiler(TIME_PROFILER, logger=self.logger)
+        self.time_profile = TimeProfiler(TIME_PROFILER, self._job, logger=self.logger)
         self.add_metric(self.time_profile)
         self.debug("Phanos - time profiler created")
 
     def create_response_size_profiler(self) -> None:
         """create response size profiling metric"""
-        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, logger=self.logger)
+        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, self._job, logger=self.logger)
         self.add_metric(self.resp_size_profile)
         self.debug("Phanos - response size profiler created")
 

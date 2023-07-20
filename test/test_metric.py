@@ -40,7 +40,7 @@ from src.phanos.metrics import (
 class TestTree(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config()
+        phanos_profiler.config("TEST")
 
     def tearDown(self) -> None:
         pass
@@ -117,7 +117,7 @@ class TestTree(unittest.TestCase):
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config()
+        phanos_profiler.config("TEST")
 
     def tearDown(self) -> None:
         phanos_profiler.delete_handlers()
@@ -207,6 +207,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             hist_no_lbl = Histogram(
                 "hist_no_lbl",
+                "TEST",
                 "V",
             )
             # invalid label
@@ -239,7 +240,7 @@ class TestMetrics(unittest.TestCase):
             hist_no_lbl.store_operation("test:method", operation="observe", value=2.0),
             self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
-            hist_w_lbl = Histogram("hist_w_lbl", "V", labels=["test"])
+            hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
 
             # missing label
             self.assertRaises(
@@ -258,6 +259,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             sum_no_lbl = Summary(
                 "sum_no_lbl",
+                "TEST",
                 "V",
             )
             # invalid label
@@ -294,6 +296,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             cnt_no_lbl = Counter(
                 "cnt_no_lbl",
+                "TEST",
                 "V",
             )
             # invalid label
@@ -339,6 +342,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             inf_no_lbl = Info(
                 "inf_no_lbl",
+                "TEST",
             )
             # invalid value type
             self.assertRaises(
@@ -365,6 +369,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             gauge_no_lbl = Gauge(
                 "gauge_no_lbl",
+                "TEST",
                 "V",
             )
             # invalid label
@@ -427,6 +432,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             enum_no_lbl = Enum(
                 "enum_no_lbl",
+                "TEST",
                 ["true", "false"],
             )
             # invalid value
@@ -455,7 +461,7 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(RuntimeError, enum_no_lbl.to_records)
 
     def test_builtin_profilers(self):
-        time_profiler = TimeProfiler("test_time_prof")
+        time_profiler = TimeProfiler("test_time_prof", "TEST")
 
         time_profiler.start()
         time_profiler.start()
@@ -475,7 +481,7 @@ class TestMetrics(unittest.TestCase):
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config()
+        phanos_profiler.config("TEST")
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -498,9 +504,9 @@ class TestProfiling(unittest.TestCase):
     def test_metric_management(self):
         length = len(phanos_profiler._metrics)
         # create metrics
-        hist = Histogram("name", "units")
+        hist = Histogram("name", "TEST", "units")
         phanos_profiler.add_metric(hist)
-        hist1 = Histogram("name1", "units")
+        hist1 = Histogram("name1", "TEST", "units")
         phanos_profiler.add_metric(hist1)
         self.assertEqual(len(phanos_profiler._metrics), length + 2)
         # delete metric
@@ -531,8 +537,8 @@ class TestProfiling(unittest.TestCase):
 
         self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
 
-        metric1 = Histogram("hist", "xz")
-        metric2 = Histogram("hist", "xz")
+        metric1 = Histogram("hist", "TEST", "xz")
+        metric2 = Histogram("hist", "TEST", "xz")
         phanos_profiler.add_metric(metric1)
         self.assertEqual(metric1, phanos_profiler._metrics["hist"])
         phanos_profiler.add_metric(metric2)
@@ -596,7 +602,7 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric.item, [])
 
     def test_custom_profile_addition(self):
-        hist = Histogram("test_name", "test_units", ["place"])
+        hist = Histogram("test_name", "TEST", "test_units", ["place"])
         self.assertEqual(len(phanos_profiler._metrics), 2)
         phanos_profiler.add_metric(hist)
         self.assertEqual(len(phanos_profiler._metrics), 3)
