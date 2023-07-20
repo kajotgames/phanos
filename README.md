@@ -8,45 +8,51 @@ Python client to gather data for Prometheus logging in server with multiple inst
 
 Phanos contains two default metrics. Time profiler measuring execution time of
 decorated methods and response size profiler measuring response size of decorated method
-of endpoint. Both can be deleted by `phanos_profiler.delete_metric(phanos.publisher.TIME_PROFILER)`
-and `phanos_profiler.delete_metric(phanos.publisher.RESPONSE_SIZE)` if not deleted, measurements are
+of endpoint. Both can be deleted by `phanos.profiler.delete_metric(phanos.publisher.TIME_PROFILER)`
+and `phanos.profiler.delete_metric(phanos.publisher.RESPONSE_SIZE)` if not deleted, measurements are
 made automatically.
 
 ### Usage
 
-1. decorate methods from which you want to send metrics `@phanos_profiler.profile`
+1. decorate methods from which you want to send metrics `@phanos.profile` shortcut for `@phanos.profiler.profile`
 
-   ```python
-   from phanos import phanos_profiler
-   # some code
-   @phanos_profiler.profile
-   def some_method():
-      # some code
-   ```
+    ```python
+    import phanos
+   
+    # some code
+    @phanos.profile
+    def some_method():
+        # some code
+    
+    # is equivalent to
+    @phanos.profiler.profile
+    def some_method():
+        # some code
+    ```
 
 2. Instantiate handlers you need for measured records at app construction.
 
     ```python      
-    from phanos import phanos_profiler
+    improt phanos
     from phanos.publisher import LoggerHandler, ImpProfHandler
     # some code
     class SomeApp(Flask):
       """some code""" 
-    phanos_profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
+    phanos.profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
     log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
-    phanos_profiler.addHandler(log_handler)    
+    phanos.profiler.addHandler(log_handler)    
     # some code
     ```
    
 In `config` method you can select if you want to turn off  time profiling, response size profiling
  or records handling. Default is turned on.
 After root method is executed all measured records are handled by all handlers added to
-`phanos_profiler`
+`phanos.profiler`
 
 ## Handlers
 
 Each handler have handler_name parameter. This string can be used to delete handlers later
-with `phanos_profiler.deleteHandler(handler_name)`.
+with `phanos.profiler.deleteHandler(handler_name)`.
 
 Records can be handled by these handlers:
  - `StreamHandler(handler_name, output)` - write records to given output (default is sys.stdout)
@@ -85,7 +91,7 @@ These classes represent Prometheus metrics without any modification.
 
 ### Add metrics automatic measurements
 
-'phanos_profiler' contains these four arguments:
+'phanos.profiler' contains these four arguments:
  
 - before_func : callable - executes before each profiled method
 - after_func : callable - executes after each profiled method
@@ -94,31 +100,33 @@ These classes represent Prometheus metrics without any modification.
 
 Implement these methods with all your measurement. Example:
 
-   ```python
-   def before_function(*args, func=None, **kwargs):
-      # this operation will be recorded
-      my_metric.store_operation(
-          operation="my_operation",
-          method=phanos_profiler.current_node.context,
-          value=measured_value,
-          label_values={"label_name": "label_value"},
-      )
-      # this won't be recorded
-      my_metric.my_method()
-      next_metric....
-   # some code 
-   phanos_profiler.before_func = before_function
-   ```
+```python
+import phanos
 
-`phanos_profiler` will record operation `"my_operation"` with value `measured_value` and given labels before
-each method decorated with `phanos_profiler.profile`.
+def before_function(*args, func=None, **kwargs):
+    # this operation will be recorded
+    my_metric.store_operation(
+        operation="my_operation",
+        method=phanos.profiler.current_node.context,
+        value=measured_value,
+        label_values={"label_name": "label_value"},
+    )
+    # this won't be recorded
+    my_metric.my_method()
+    next_metric....
+# some code 
+phanos.profiler.before_func = before_function
+```
+
+`phanos.profiler` will record operation `"my_operation"` with value `measured_value` and given labels before
+each method decorated with `phanos.profiler.profile` shortcut(`phanos.profile`).
 
 What must/can be done:
 
 - 'before_' functions must have 'func' parameter passed as kwarg where function which is executed is passed.
 'after_' function needs to have 'fn_result' parameter where function result is passed
 - all four functions can access `*args` and `**kwargs` of decorated methods.
-- Each 'store_operation' must have parameter `method=phanos_profiler.current_node.context` so 
+- Each 'store_operation' must have parameter `method=phanos.profiler.current_node.context` so 
 method context is correctly saved. 
 - current_node.context stores context of method calling in format: 
 `"root_class.__name__:root_method.__name__.currently_executed.__name__"` if root is function then instead of 
