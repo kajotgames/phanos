@@ -3,11 +3,18 @@ import time
 import unittest
 from io import StringIO
 import sys
+from os.path import dirname, abspath, join
 from unittest.mock import patch, MagicMock
 
 from flask import Flask
 from flask.ctx import AppContext
 from flask.testing import FlaskClient
+
+path = join(join(dirname(__file__), ".."), "")
+path = abspath(path)
+if path not in sys.path:
+    sys.path.insert(0, path)
+
 
 from src.phanos import phanos_profiler, publisher
 from src.phanos.publisher import (
@@ -89,6 +96,23 @@ class TestTree(unittest.TestCase):
         mock.assert_any_call()
         self.assertEqual(mock.call_count, 5)
 
+        phanos_profiler.clear()
+        # no children exist but error should not be raised
+        phanos_profiler._root.delete_child()
+
+    def test_methods_between(self):
+        output = StringIO()
+        str_handler = StreamHandler("str_handler", output)
+        phanos_profiler.add_handler(str_handler)
+        dummy_api.test_list_comp()
+        dummy_api.DummyResource().get_()
+        output.seek(0)
+        methods = []
+        for line in output.readlines():
+            methods.append(line.split(", ")[1][8:])
+        phanos_profiler.delete_handlers()
+        self.assertEqual([methods[0], methods[3]], testing_data.methods_between_out)
+
 
 class TestHandlers(unittest.TestCase):
     @classmethod
@@ -146,6 +170,15 @@ class TestHandlers(unittest.TestCase):
         phanos_profiler.delete_handlers()
         self.assertEqual(phanos_profiler._handlers, {})
 
+        self.assertRaises(KeyError, phanos_profiler.delete_handler, "nonexistent")
+
+        handler1 = StreamHandler("handler")
+        handler2 = StreamHandler("handler")
+        phanos_profiler.add_handler(handler1)
+        self.assertEqual(handler1, phanos_profiler._handlers["handler"])
+        phanos_profiler.add_handler(handler2)
+        self.assertEqual(handler2, phanos_profiler._handlers["handler"])
+
     def test_rabbit_handler_connection(self):
         self.assertRaises(RuntimeError, ImpProfHandler, "handle")
 
@@ -154,10 +187,9 @@ class TestHandlers(unittest.TestCase):
         with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
-
+            # noinspection PyDunderSlots,PyUnresolvedReferences
             test_publish = handler._publisher.publish = MagicMock(return_value=3)
 
-            #  self.assert
             handler.handle(profiler_name="name", records=testing_data.test_handler_in)
             test_publish.assert_called()
 
@@ -418,6 +450,10 @@ class TestMetrics(unittest.TestCase):
             enum_no_lbl.store_operation("test:method", "state", "true")
             self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
 
+            enum_no_lbl.store_operation("test:method", "state", "true")
+            enum_no_lbl._values.pop(0)
+            self.assertRaises(RuntimeError, enum_no_lbl.to_records)
+
     def test_builtin_profilers(self):
         time_profiler = TimeProfiler("test_time_prof")
 
@@ -433,13 +469,15 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(time_profiler._values[0][1] // 100, 2)
         self.assertEqual(time_profiler._values[1][1] // 100, 4)
 
+        self.assertRaises(RuntimeError, time_profiler.store_operation, "test:method", "stop")
+
 
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         phanos_profiler.config()
         cls.app = app
-        cls.client = cls.app.test_client()
+        cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
     def setUp(self) -> None:
         phanos_profiler.create_time_profiler()
@@ -491,6 +529,15 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(phanos_profiler._metrics, {})
         self.assertEqual(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE), None)
 
+        self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
+
+        metric1 = Histogram("hist", "xz")
+        metric2 = Histogram("hist", "xz")
+        phanos_profiler.add_metric(metric1)
+        self.assertEqual(metric1, phanos_profiler._metrics["hist"])
+        phanos_profiler.add_metric(metric2)
+        self.assertEqual(metric2, phanos_profiler._metrics["hist"])
+
     def test_profiling(self):
         phanos_profiler.handle_records = False
         _ = self.client.get("http://localhost/api/dummy/one")
@@ -533,6 +580,14 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(phanos_profiler.current_node, phanos_profiler._root)
         self.assertEqual(phanos_profiler._root.children, [])
 
+        access = dummy_api.DummyDbAccess()
+        self.output.truncate(0)
+        self.output.seek(0)
+        self.assertRaises(RuntimeError, access.raise_access)
+        self.output.seek(0)
+        # len 1 cuz DummyDbAccess.first_access finished, but then raise error so raise_access wasn't measured
+        self.assertEqual(len(self.output.readlines()), 1)
+
         # cleanup assertion
         for metric in phanos_profiler._metrics.values():
             self.assertEqual(metric._values, [])
@@ -549,6 +604,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
         def before_root_func(*args, func=None, **kwargs):
+            _ = args
+            _ = kwargs
+            _ = func
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -559,6 +617,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.before_root_func = before_root_func
 
         def before_func(*args, func=None, **kwargs):
+            _ = args
+            _ = kwargs
+            _ = func
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -569,6 +630,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.before_func = before_func
 
         def after_func(*args, fn_result=None, **kwargs):
+            _ = args
+            _ = kwargs
+            _ = fn_result
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,
@@ -579,6 +643,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.after_func = after_func
 
         def after_root_func(*args, fn_result=None, **kwargs):
+            _ = args
+            _ = kwargs
+            _ = fn_result
             hist.store_operation(
                 operation="observe",
                 method=phanos_profiler.current_node.context,

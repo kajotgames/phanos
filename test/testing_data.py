@@ -44,9 +44,7 @@ test_handler_in_no_lbl = (
     },
 )
 test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test=value\n"
-test_handler_out_no_lbl = (
-    "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS\n"
-)
+test_handler_out_no_lbl = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS\n"
 
 hist_no_lbl = [
     {
@@ -182,4 +180,9 @@ custom_profile_out = [
         "value": 4.0,
         "place": "after_root",
     },
+]
+
+methods_between_out = [
+    "dummy_api:test_list_comp.test_inside_list_comp",
+    "DummyResource:get_.third_access.second_access.first_access",
 ]

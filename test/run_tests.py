@@ -1,4 +1,12 @@
 import unittest
+import sys
+from os.path import dirname, abspath, join
+
+path = join(join(dirname(__file__), ".."), "")
+path = abspath(path)
+if path not in sys.path:
+    sys.path.insert(0, path)
+
 from test import test_metric
 
 if __name__ == "__main__":

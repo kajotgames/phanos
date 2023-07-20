@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phanos"
-version = "0.0.16"
+version = "0.0.17"
 authors = [
   { name="Miroslav Bulička", email="bulickamiroslav@gmail.com" },
 ]
@@ -12,7 +12,11 @@ description = "Python client to gather data for Prometheus logging in server wit
 readme = "README.md"
 requires-python = ">=3.10.6"
 classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python",
     "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]

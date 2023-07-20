@@ -136,9 +136,10 @@ class MethodTreeNode(log.InstanceLoggerMixin):
             for frame in inspect.stack():
                 if frame.function == starting_method:
                     break
-                method_module = inspect.getmodule(frame[0]).__name__.split(".")[0]
+                method_module = inspect.getmodule(frame[0])
+                method_module = method_module.__name__.split(".")[0] if method_module else ""
                 # first condition checks if method have same top module as self.method
-                # second condition ignores <lambda>, <genexp>, <listcomp>, ...
+                # second condition ignores <lambda>, <genexp>, <listcomp>...
                 if method_module == self._top_module and frame.function[0] != "<":
                     methods_between.append(frame.function)
             methods_between.reverse()

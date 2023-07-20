@@ -23,11 +23,6 @@ def test_inside_list_comp():
 @phanos_profiler.profile
 def test_list_comp():
     _ = [test_inside_list_comp() for i in range(1)]
-    y = lambda a: test_inside_list_comp() + a
-    _ = y(1)
-    x = (test_inside_list_comp() ** 2 for i in range(1))
-    for i in x:
-        _ = i
 
 
 class DummyDbAccess:
@@ -55,6 +50,11 @@ class DummyDbAccess:
     def third_access(self):
         self.second_access()
 
+    @phanos_profiler.profile
+    def raise_access(self):
+        self.first_access()
+        raise RuntimeError()
+
 
 @ns.route("/one")
 class DummyResource(Resource):
@@ -64,6 +64,11 @@ class DummyResource(Resource):
     def get(self):
         self.access.first_access()
         self.access.second_access()
+        return {"success": True}, 201
+
+    @phanos_profiler.profile
+    def get_(self):
+        self.access.third_access()
         return {"success": True}, 201
 
 
