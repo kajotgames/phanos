@@ -236,7 +236,7 @@ class TestMetrics(unittest.TestCase):
             )
             hist_no_lbl.cleanup()
             # valid operation
-            hist_no_lbl.store_operation("test:method", "observe", 2.0),
+            hist_no_lbl.store_operation("test:method", operation="observe", value=2.0),
             self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
             hist_w_lbl = Histogram("hist_w_lbl", "V", labels=["test"])
@@ -287,7 +287,7 @@ class TestMetrics(unittest.TestCase):
             )
             sum_no_lbl.cleanup()
             # valid operation
-            sum_no_lbl.store_operation("test:method", "observe", 2.0),
+            sum_no_lbl.store_operation("test:method", operation="observe", value=2.0),
             self.assertEqual(sum_no_lbl.to_records(), testing_data.sum_no_lbl)
 
     def test_counter(self):
@@ -332,7 +332,7 @@ class TestMetrics(unittest.TestCase):
             cnt_no_lbl.cleanup()
 
             # valid operation
-            cnt_no_lbl.store_operation("test:method", "inc", 2.0),
+            cnt_no_lbl.store_operation("test:method", operation="inc", value=2.0),
             self.assertEqual(cnt_no_lbl.to_records(), testing_data.cnt_no_lbl)
 
     def test_info(self):
@@ -358,7 +358,7 @@ class TestMetrics(unittest.TestCase):
             )
             inf_no_lbl.cleanup()
             # valid operation
-            inf_no_lbl.store_operation("test:method", "info", {"value": "asd"}),
+            inf_no_lbl.store_operation("test:method", operation="info", value={"value": "asd"}),
             self.assertEqual(inf_no_lbl.to_records(), testing_data.inf_no_lbl)
 
     def test_gauge(self):
@@ -418,9 +418,9 @@ class TestMetrics(unittest.TestCase):
             )
             gauge_no_lbl.cleanup()
             # valid operation
-            gauge_no_lbl.store_operation("test:method", "inc", 2.0),
-            gauge_no_lbl.store_operation("test:method", "dec", 2.0),
-            gauge_no_lbl.store_operation("test:method", "set", 2.0),
+            gauge_no_lbl.store_operation("test:method", operation="inc", value=2.0),
+            gauge_no_lbl.store_operation("test:method", operation="dec", value=2.0),
+            gauge_no_lbl.store_operation("test:method", operation="set", value=2.0),
             self.assertEqual(gauge_no_lbl.to_records(), testing_data.gauge_no_lbl)
 
     def test_enum(self):
@@ -447,10 +447,10 @@ class TestMetrics(unittest.TestCase):
             )
             enum_no_lbl.cleanup()
             # valid operation
-            enum_no_lbl.store_operation("test:method", "state", "true")
+            enum_no_lbl.store_operation("test:method", operation="state", value="true")
             self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
 
-            enum_no_lbl.store_operation("test:method", "state", "true")
+            enum_no_lbl.store_operation("test:method", operation="state", value="true")
             enum_no_lbl._values.pop(0)
             self.assertRaises(RuntimeError, enum_no_lbl.to_records)
 
@@ -461,10 +461,10 @@ class TestMetrics(unittest.TestCase):
         time_profiler.start()
         self.assertEqual(len(time_profiler._start_ts), 2)
         time.sleep(0.2)
-        time_profiler.store_operation("test:method", "stop")
+        time_profiler.store_operation("test:method", operation="stop")
         self.assertEqual(len(time_profiler._start_ts), 1)
         time.sleep(0.2)
-        time_profiler.store_operation("test:method", "stop")
+        time_profiler.store_operation("test:method", operation="stop")
         self.assertEqual(len(time_profiler._start_ts), 0)
         self.assertEqual(time_profiler._values[0][1] // 100, 2)
         self.assertEqual(time_profiler._values[1][1] // 100, 4)
@@ -608,8 +608,8 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = func
             hist.store_operation(
-                operation="observe",
                 method=phanos_profiler.current_node.context,
+                operation="observe",
                 value=1.0,
                 label_values={"place": "before_root"},
             )
@@ -621,8 +621,8 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = func
             hist.store_operation(
-                operation="observe",
                 method=phanos_profiler.current_node.context,
+                operation="observe",
                 value=2.0,
                 label_values={"place": "before_func"},
             )
@@ -634,8 +634,8 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                operation="observe",
                 method=phanos_profiler.current_node.context,
+                operation="observe",
                 value=3.0,
                 label_values={"place": "after_func"},
             )
@@ -647,8 +647,8 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                operation="observe",
                 method=phanos_profiler.current_node.context,
+                operation="observe",
                 value=4.0,
                 label_values={"place": "after_root"},
             )

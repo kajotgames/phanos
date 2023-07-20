@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import logging
 import typing
 from . import log
 
@@ -21,7 +20,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     def __init__(
         self,
         method: typing.Optional[typing.Callable] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """Set method and nodes context
 

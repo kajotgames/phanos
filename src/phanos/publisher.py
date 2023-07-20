@@ -71,7 +71,7 @@ class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
     _publisher: BlockingPublisher
-    _logger: logging.Logger
+    _logger: typing.Optional[log.LoggerLike]
 
     def __init__(
         self,
@@ -86,7 +86,7 @@ class ImpProfHandler(BaseHandler):
         retry: int = 3,
         exchange_name: str = "profiling",
         exchange_type: str = "fanout",
-        logger: typing.Optional[Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
         **kwargs,
     ) -> None:
         """Creates BlockingPublisher instance (connection not established yet),
@@ -158,14 +158,14 @@ class ImpProfHandler(BaseHandler):
 class LoggerHandler(BaseHandler):
     """logger handler"""
 
-    _logger: logging.Logger
+    _logger: log.LoggerLike
     _formatter: OutputFormatter
     level: int
 
     def __init__(
         self,
         handler_name: str,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
         level: int = 10,
     ) -> None:
         """
@@ -374,7 +374,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
     def delete_handlers(self) -> None:
         """delete all handlers"""
         self._handlers.clear()
-        self.debug(f"all handlers deleted")
+        self.debug("all handlers deleted")
 
     def profile(self, func: typing.Callable) -> typing.Callable:
         """
@@ -406,8 +406,11 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 if self.current_node.parent == self._root:
                     self._after_root_func(*args, fn_result=result, **kwargs)
                     self._handle_records_clear()
-
-                self.current_node = self.current_node.parent
+                if self.current_node.parent:
+                    self.current_node = self.current_node.parent
+                else:
+                    self.error(f"{self.profile.__qualname__}: node {self.current_node.context!r} have no parent.")
+                    raise ValueError(f"{self.current_node.context!r} have no parent")
                 self.current_node.delete_child()
             return result
 
@@ -432,10 +435,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         # phanos metrics
         if self.resp_size_profile:
             self.resp_size_profile.store_operation(
-                operation="rec",
-                method=self.current_node.context,
-                value=fn_result,
-                label_values={},
+                method=self.current_node.context, operation="rec", value=fn_result, label_values={}
             )
         # users custom metrics operation recording
         if callable(self.after_root_func):
@@ -452,7 +452,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
     def _after_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
         # phanos metrics
         if self.time_profile:
-            self.time_profile.store_operation(operation="stop", method=self.current_node.context, label_values={})
+            self.time_profile.store_operation(method=self.current_node.context, operation="stop", label_values={})
         # users custom metrics operation recording
         if callable(self.after_func):
             self.after_func(*args, fn_result=fn_result, **kwargs)

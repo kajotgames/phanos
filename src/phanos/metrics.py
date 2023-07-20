@@ -1,3 +1,4 @@
+""" Module with metric types corresponding with Prometheus metrics and custom Time profiling metric """
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
         name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Metric and stores it into publisher instance
@@ -58,7 +59,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
         :raises RuntimeError: if one of records would be incomplete
         """
         records = []
-        if not (len(self.method) == len(self._values) == len(self._label_values)):
+        if not len(self.method) == len(self._values) == len(self._label_values):
             self.error(f"{self.to_records.__qualname__}: one of records missing method || value || label_values")
             raise RuntimeError(f"{len(self.method)}, {len(self._values)}, {len(self._label_values)}")
         for i in range(len(self._values)):
@@ -169,7 +170,7 @@ class Histogram(MetricWrapper):
         name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Histogram metric and stores it into publisher instance
@@ -208,7 +209,7 @@ class Summary(MetricWrapper):
         name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Summary metric and stores it into publisher instance
@@ -247,7 +248,7 @@ class Counter(MetricWrapper):
         name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Counter metric and stores it into publisher instance
@@ -286,7 +287,7 @@ class Info(MetricWrapper):
         name: str,
         units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Info metric and stores it into publisher instance
@@ -327,7 +328,7 @@ class Gauge(MetricWrapper):
         name: str,
         units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Gauge metric and stores it into publisher instance
@@ -398,7 +399,7 @@ class Enum(MetricWrapper):
         states: typing.List[str],
         units: typing.Optional[str] = None,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         Initialize Enum metric and stores it into publisher instance
@@ -447,7 +448,7 @@ class TimeProfiler(Histogram):
         self,
         name: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
@@ -496,7 +497,7 @@ class ResponseSize(Histogram):
         self,
         name: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[logging.Logger] = None,
+        logger: typing.Optional[log.LoggerLike] = None,
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
