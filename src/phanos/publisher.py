@@ -268,8 +268,8 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def config(
         self,
-        job: str = "",
         logger=None,
+        job: str = "",
         time_profile: bool = True,
         request_size_profile: bool = True,
         handle_records: bool = True,

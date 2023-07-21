@@ -40,7 +40,7 @@ from src.phanos.metrics import (
 class TestTree(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config("TEST")
+        phanos_profiler.config(job="TEST")
 
     def tearDown(self) -> None:
         pass
@@ -117,7 +117,7 @@ class TestTree(unittest.TestCase):
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config("TEST")
+        phanos_profiler.config(job="TEST")
 
     def tearDown(self) -> None:
         phanos_profiler.delete_handlers()
