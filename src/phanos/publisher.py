@@ -268,7 +268,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def config(
         self,
-        job: str,
+        job: str = "",
         logger=None,
         time_profile: bool = True,
         request_size_profile: bool = True,
@@ -294,13 +294,13 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""
-        self.time_profile = TimeProfiler(TIME_PROFILER, self._job, logger=self.logger)
+        self.time_profile = TimeProfiler(TIME_PROFILER, job=self._job, logger=self.logger)
         self.add_metric(self.time_profile)
         self.debug("Phanos - time profiler created")
 
     def create_response_size_profiler(self) -> None:
         """create response size profiling metric"""
-        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, self._job, logger=self.logger)
+        self.resp_size_profile = ResponseSize(RESPONSE_SIZE, job=self._job, logger=self.logger)
         self.add_metric(self.resp_size_profile)
         self.debug("Phanos - response size profiler created")
 

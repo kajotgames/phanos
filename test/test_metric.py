@@ -207,8 +207,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             hist_no_lbl = Histogram(
                 "hist_no_lbl",
-                "TEST",
                 "V",
+                "TEST",
             )
             # invalid label
             self.assertRaises(
@@ -240,7 +240,7 @@ class TestMetrics(unittest.TestCase):
             hist_no_lbl.store_operation("test:method", operation="observe", value=2.0),
             self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
-            hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
+            hist_w_lbl = Histogram("hist_w_lbl", "V", "TEST", labels=["test"])
 
             # missing label
             self.assertRaises(
@@ -257,11 +257,7 @@ class TestMetrics(unittest.TestCase):
 
     def test_summary(self):
         with app.test_request_context():
-            sum_no_lbl = Summary(
-                "sum_no_lbl",
-                "TEST",
-                "V",
-            )
+            sum_no_lbl = Summary("sum_no_lbl", "V", job="TEST")
             # invalid label
             self.assertRaises(
                 ValueError,
@@ -296,8 +292,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             cnt_no_lbl = Counter(
                 "cnt_no_lbl",
-                "TEST",
                 "V",
+                "TEST",
             )
             # invalid label
             self.assertRaises(
@@ -342,7 +338,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             inf_no_lbl = Info(
                 "inf_no_lbl",
-                "TEST",
+                job="TEST",
             )
             # invalid value type
             self.assertRaises(
@@ -369,8 +365,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             gauge_no_lbl = Gauge(
                 "gauge_no_lbl",
-                "TEST",
                 "V",
+                "TEST",
             )
             # invalid label
             self.assertRaises(
@@ -432,8 +428,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             enum_no_lbl = Enum(
                 "enum_no_lbl",
-                "TEST",
                 ["true", "false"],
+                job="TEST",
             )
             # invalid value
             self.assertRaises(
@@ -481,7 +477,7 @@ class TestMetrics(unittest.TestCase):
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config("TEST")
+        phanos_profiler.config(job="TEST")
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -556,6 +552,7 @@ class TestProfiling(unittest.TestCase):
 
         self.output.seek(0)
         lines = self.output.readlines()
+        print(lines)
         time_lines = lines[:-1]
         size_line = lines[-1]
         for i in range(len(time_lines)):
