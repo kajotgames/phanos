@@ -15,6 +15,7 @@ if __name__ == "__main__":
         test_metric.TestHandlers,
         test_metric.TestTree,
         test_metric.TestProfiling,
+        test_metric.TestAsync,
     ]
 
     loader = unittest.TestLoader()

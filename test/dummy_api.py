@@ -1,5 +1,4 @@
-from abc import abstractmethod
-from functools import partial
+import asyncio
 from time import sleep
 
 from flask import Flask
@@ -54,6 +53,18 @@ class DummyDbAccess:
     def raise_access(self):
         self.first_access()
         raise RuntimeError()
+
+
+class AsyncTest:
+    @staticmethod
+    @phanos_profiler.profile
+    async def async_access_short():
+        await asyncio.sleep(0.1)
+
+    @staticmethod
+    @phanos_profiler.profile
+    async def async_access_long():
+        await asyncio.sleep(0.2)
 
 
 @ns.route("/one")

@@ -1,3 +1,5 @@
+import asyncio
+import datetime
 import logging
 import time
 import unittest
@@ -90,7 +92,7 @@ class TestTree(unittest.TestCase):
         _1.add_child(MethodTreeNode(self.tearDown))
         _1.add_child(MethodTreeNode(self.tearDown))
         _1.add_child(MethodTreeNode(self.tearDown))
-        with patch.object(MethodTreeNode, "_clear_children") as mock:
+        with patch.object(MethodTreeNode, "clear_children") as mock:
             phanos_profiler.clear()
 
         mock.assert_any_call()
@@ -152,32 +154,32 @@ class TestHandlers(unittest.TestCase):
         result = output.read()
         self.assertEqual(result, testing_data.test_handler_out)
         log_handler = LoggerHandler("log_handler1")
-        self.assertEqual(log_handler._logger.name, "PHANOS")
+        self.assertEqual(log_handler.logger.name, "PHANOS")
         output.seek(0)
         result = output.read()
         self.assertEqual(result, testing_data.test_handler_out)
         sys.stdout = tmp
 
     def test_handlers_management(self):
-        length = len(phanos_profiler._handlers)
+        length = len(phanos_profiler.handlers)
         log1 = LoggerHandler("log_handler1")
         phanos_profiler.add_handler(log1)
         log2 = LoggerHandler("log_handler2")
         phanos_profiler.add_handler(log2)
-        self.assertEqual(len(phanos_profiler._handlers), length + 2)
+        self.assertEqual(len(phanos_profiler.handlers), length + 2)
         phanos_profiler.delete_handler("log_handler1")
-        self.assertEqual(phanos_profiler._handlers.get("log_handler1"), None)
+        self.assertEqual(phanos_profiler.handlers.get("log_handler1"), None)
         phanos_profiler.delete_handlers()
-        self.assertEqual(phanos_profiler._handlers, {})
+        self.assertEqual(phanos_profiler.handlers, {})
 
         self.assertRaises(KeyError, phanos_profiler.delete_handler, "nonexistent")
 
         handler1 = StreamHandler("handler")
         handler2 = StreamHandler("handler")
         phanos_profiler.add_handler(handler1)
-        self.assertEqual(handler1, phanos_profiler._handlers["handler"])
+        self.assertEqual(handler1, phanos_profiler.handlers["handler"])
         phanos_profiler.add_handler(handler2)
-        self.assertEqual(handler2, phanos_profiler._handlers["handler"])
+        self.assertEqual(handler2, phanos_profiler.handlers["handler"])
 
     def test_rabbit_handler_connection(self):
         self.assertRaises(RuntimeError, ImpProfHandler, "handle")
@@ -188,7 +190,7 @@ class TestHandlers(unittest.TestCase):
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences
-            test_publish = handler._publisher.publish = MagicMock(return_value=3)
+            test_publish = handler.publisher.publish = MagicMock(return_value=3)
 
             handler.handle(profiler_name="name", records=testing_data.test_handler_in)
             test_publish.assert_called()
@@ -498,47 +500,47 @@ class TestProfiling(unittest.TestCase):
         self.output.close()
 
     def test_metric_management(self):
-        length = len(phanos_profiler._metrics)
+        length = len(phanos_profiler.metrics)
         # create metrics
         hist = Histogram("name", "TEST", "units")
         phanos_profiler.add_metric(hist)
         hist1 = Histogram("name1", "TEST", "units")
         phanos_profiler.add_metric(hist1)
-        self.assertEqual(len(phanos_profiler._metrics), length + 2)
+        self.assertEqual(len(phanos_profiler.metrics), length + 2)
         # delete metric
         phanos_profiler.delete_metric("name")
-        self.assertEqual(len(phanos_profiler._metrics), length + 1)
-        self.assertEqual(phanos_profiler._metrics.get("name"), None)
+        self.assertEqual(len(phanos_profiler.metrics), length + 1)
+        self.assertEqual(phanos_profiler.metrics.get("name"), None)
         # delete time_profiling metric
         phanos_profiler.delete_metric(publisher.TIME_PROFILER)
-        self.assertEqual(phanos_profiler._metrics.get(publisher.TIME_PROFILER), None)
+        self.assertEqual(phanos_profiler.metrics.get(publisher.TIME_PROFILER), None)
         self.assertEqual(phanos_profiler.time_profile, None)
         # delete response size metric
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
-        self.assertEqual(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE), None)
+        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
         self.assertEqual(phanos_profiler.resp_size_profile, None)
         # create response size metric
         phanos_profiler.create_response_size_profiler()
         self.assertIsNotNone(phanos_profiler.resp_size_profile)
-        self.assertEqual(len(phanos_profiler._metrics), 2)
+        self.assertEqual(len(phanos_profiler.metrics), 2)
 
         # delete all metrics (without response size and time profiling metrics)
         phanos_profiler.delete_metrics()
-        self.assertEqual(len(phanos_profiler._metrics), 1)
+        self.assertEqual(len(phanos_profiler.metrics), 1)
         self.assertIsNotNone(phanos_profiler.resp_size_profile, None)
-        self.assertIsNotNone(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE))
+        self.assertIsNotNone(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE))
         phanos_profiler.delete_metrics(rm_time_profile=True, rm_resp_size_profile=True)
-        self.assertEqual(phanos_profiler._metrics, {})
-        self.assertEqual(phanos_profiler._metrics.get(publisher.RESPONSE_SIZE), None)
+        self.assertEqual(phanos_profiler.metrics, {})
+        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
 
         self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
 
         metric1 = Histogram("hist", "TEST", "xz")
         metric2 = Histogram("hist", "TEST", "xz")
         phanos_profiler.add_metric(metric1)
-        self.assertEqual(metric1, phanos_profiler._metrics["hist"])
+        self.assertEqual(metric1, phanos_profiler.metrics["hist"])
         phanos_profiler.add_metric(metric2)
-        self.assertEqual(metric2, phanos_profiler._metrics["hist"])
+        self.assertEqual(metric2, phanos_profiler.metrics["hist"])
 
     def test_profiling(self):
         phanos_profiler.handle_records = False
@@ -592,7 +594,7 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(len(self.output.readlines()), 1)
 
         # cleanup assertion
-        for metric in phanos_profiler._metrics.values():
+        for metric in phanos_profiler.metrics.values():
             self.assertEqual(metric._values, [])
             self.assertEqual(metric._label_values, [])
             self.assertEqual(metric.method, [])
@@ -600,9 +602,9 @@ class TestProfiling(unittest.TestCase):
 
     def test_custom_profile_addition(self):
         hist = Histogram("test_name", "TEST", "test_units", ["place"])
-        self.assertEqual(len(phanos_profiler._metrics), 2)
+        self.assertEqual(len(phanos_profiler.metrics), 2)
         phanos_profiler.add_metric(hist)
-        self.assertEqual(len(phanos_profiler._metrics), 3)
+        self.assertEqual(len(phanos_profiler.metrics), 3)
         phanos_profiler.delete_metric(publisher.TIME_PROFILER)
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
@@ -670,3 +672,38 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(method, testing_data.custom_profile_out[i]["method"])
             self.assertEqual(float(value), testing_data.custom_profile_out[i]["value"])
             self.assertEqual(place, testing_data.custom_profile_out[i]["place"])
+
+
+class TestAsync(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        phanos_profiler.config(job="TEST", request_size_profile=False)
+        cls.app = app
+        cls.client = cls.app.test_client()  # type: ignore[attr-defined]
+
+    def setUp(self) -> None:
+        self.output = StringIO()
+        profile_handler = StreamHandler("name", self.output)
+        phanos_profiler.add_handler(profile_handler)
+
+    def tearDown(self) -> None:
+        phanos_profiler.delete_handlers()
+        phanos_profiler.delete_metrics(True, True)
+        self.output.close()
+
+    async def test_profiling(self):
+        async_access = dummy_api.AsyncTest()
+        loop = asyncio.get_event_loop()
+        task_long = loop.create_task(async_access.async_access_long())
+        task_short = loop.create_task(async_access.async_access_short())
+        start = datetime.datetime.now()
+        await asyncio.wait([task_long, task_short])
+        stop = datetime.datetime.now() - start
+        # total time of execution is 0.2 (long_task)
+        self.assertEqual(round(stop.total_seconds(), 1), 0.2)
+        self.output.seek(0)
+        output = []
+        for line in self.output.readlines():
+            output.append(float(line.split("value: ")[1][:-4]) // 100)
+        # [short_task, long_task] execution time from phanos profiler
+        self.assertEqual(output, [1.0, 2.0])

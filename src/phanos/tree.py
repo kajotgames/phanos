@@ -15,7 +15,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     method: typing.Optional[typing.Callable]
     context: str
 
-    _top_module: str
+    top_module: str
 
     def __init__(
         self,
@@ -38,7 +38,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
 
             module = inspect.getmodule(self.method)
             # if module is None -> builtin, but that shouldn't happen
-            self._top_module = __import__(module.__name__.split(".")[0]).__name__ if module else ""
+            self.top_module = __import__(module.__name__.split(".")[0]).__name__ if module else ""
 
     def add_child(self, child: MethodTreeNode) -> MethodTreeNode:
         """Add child to method tree node
@@ -51,7 +51,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         if self.method is None:  # equivalent of 'self.context != ""' -> i am root
             child.context = self.get_method_class(child.method) + ":" + child.context  # child.method cannot be None
         else:
-            between = self._get_methods_between()
+            between = self.get_methods_between()
             if between != "":
                 child.context = self.context + "." + between + "." + child.context
             else:
@@ -73,16 +73,16 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         """Deletes whole subtree starting from this node"""
         for child in self.children:
             child.clear_tree()
-        self._clear_children()
+        self.clear_children()
 
-    def _clear_children(self):
+    def clear_children(self):
         """Clears children and unset parent of this node"""
         self.parent = None
         children = []
         for child in self.children:
             children.append(child.context)
         self.children.clear()
-        self.debug(f"{self._clear_children.__qualname__}: node {self.context!r} deleted children: {children}")
+        self.debug(f"{self.clear_children.__qualname__}: node {self.context!r} deleted children: {children}")
 
     @staticmethod
     def get_method_class(meth: typing.Callable) -> str:
@@ -119,7 +119,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
 
         return module.__name__.split(".")[-1] if module else ""
 
-    def _get_methods_between(self) -> str:
+    def get_methods_between(self) -> str:
         """Creates string from methods between `parent.method` and `self.method`
 
         :returns: Method calling context string. Example: "method1.method2.method3"
@@ -139,7 +139,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
                 method_module = method_module.__name__.split(".")[0] if method_module else ""
                 # first condition checks if method have same top module as self.method
                 # second condition ignores <lambda>, <genexp>, <listcomp>...
-                if method_module == self._top_module and frame.function[0] != "<":
+                if method_module == self.top_module and frame.function[0] != "<":
                     methods_between.append(frame.function)
             methods_between.reverse()
             between = ".".join(f"{method}" for method in methods_between)
