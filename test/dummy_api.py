@@ -1,6 +1,7 @@
 import asyncio
 from time import sleep
 
+import flask
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
 
@@ -81,6 +82,23 @@ class DummyResource(Resource):
     def get_(self):
         self.access.third_access()
         return {"success": True}, 201
+
+    # for testing nested api calls
+    @phanos_profiler.profile
+    def post(self):
+        with app.app_context():
+            return app.test_client().delete("/api/dummy/one")
+
+    @phanos_profiler.profile
+    def delete(self):
+        with app.app_context():
+            response = app.test_client().put("/api/dummy/one")
+        return response.json, response.status_code
+
+    @phanos_profiler.profile
+    def put(self):
+        flask.abort(400, "some shit")
+        return {"success", True}, 200
 
 
 app = Flask("TEST")

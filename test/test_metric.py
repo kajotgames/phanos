@@ -543,18 +543,33 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(metric2, phanos_profiler.metrics["hist"])
 
     def test_profiling(self):
+        # do not handle records
         phanos_profiler.handle_records = False
         _ = self.client.get("http://localhost/api/dummy/one")
         self.output.seek(0)
         lines = self.output.readlines()
         self.assertEqual(lines, [])
 
+        # test of api call inside same api call with error risen
         phanos_profiler.handle_records = True
-        _ = self.client.get("http://localhost/api/dummy/one")
+        _ = self.client.post("http://localhost/api/dummy/one")
+        self.output.seek(0)
+        self.assertEqual(self.output.readlines(), [])
+        # cleanup assertion
+        for metric in phanos_profiler.metrics.values():
+            self.assertEqual(metric._values, [])
+            self.assertEqual(metric._label_values, [])
+            self.assertEqual(metric.method, [])
+            self.assertEqual(metric.item, [])
+        # error_occurred will be set to false before root function of next profiling
+        self.assertEqual(phanos_profiler.error_occurred, True)
+        self.assertEqual(phanos_profiler.current_node, phanos_profiler._root)
 
+        # profiling after request, where error_occurred
+        _ = self.client.get("http://localhost/api/dummy/one")
+        self.assertEqual(phanos_profiler.error_occurred, False)
         self.output.seek(0)
         lines = self.output.readlines()
-        print(lines)
         time_lines = lines[:-1]
         size_line = lines[-1]
         for i in range(len(time_lines)):
