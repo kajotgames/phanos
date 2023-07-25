@@ -246,6 +246,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
     handlers: typing.Dict[str, BaseHandler]
     handle_records: bool
     job: str
+    error_occurred: bool
 
     def __init__(self) -> None:
         """Initialize ProfilesPublisher
@@ -257,6 +258,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         self.metrics = {}
         self.handlers = {}
         self.job = ""
+        self.error_occurred = False
 
         self.resp_size_profile = None
         self.time_profile = None
@@ -395,6 +397,8 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             Saves method context into MethodTreeNode, calls _before_root_func, _before_func
             """
             if self.handlers and self.handle_records:
+                if self.current_node == self._root:
+                    self.error_occurred = False
                 self.current_node = self.current_node.add_child(MethodTreeNode(func, self.logger))
 
                 if self.current_node.parent == self._root:
@@ -402,7 +406,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 self._before_func(*args, func=func, **kwargs)
 
         def after_function_handling(result, *args, **kwargs):
-            """ " Handles profiling after profiled function execution (records stop time)
+            """Handles profiling after profiled function execution (records stop time)
 
             Deletes method context from MethodTreeNode, calls _after_root_func, _after_func and handle records
             if root function was executed
@@ -413,12 +417,12 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 if self.current_node.parent == self._root:
                     self._after_root_func(*args, fn_result=result, **kwargs)
                     self.handle_records_clear()
-                if self.current_node.parent:
+                if self.current_node.parent and not self.error_occurred:
                     self.current_node = self.current_node.parent
-                else:
+                    self.current_node.delete_child()
+                elif not self.error_occurred:
                     self.error(f"{self.profile.__qualname__}: node {self.current_node.context!r} have no parent.")
                     raise ValueError(f"{self.current_node.context!r} have no parent")
-                self.current_node.delete_child()
 
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async decorator version"""
@@ -428,6 +432,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
                 self.force_handle_records_clear()
+                self.error_occurred = True
                 raise e
             after_function_handling(result, *args, **kwargs)
             return result
@@ -437,10 +442,10 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             before_function_handling(*args, **kwargs)
             try:
                 result = func(*args, **kwargs)
-
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
                 self.force_handle_records_clear()
+                self.error_occurred = True
                 raise e
             after_function_handling(result, *args, **kwargs)
             return result
@@ -484,7 +489,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
     def _after_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
         # phanos metrics
-        if self.time_profile:
+        if self.time_profile and not self.error_occurred:
             self.time_profile.store_operation(method=self.current_node.context, operation="stop", label_values={})
         # users custom metrics operation recording
         if callable(self.after_func):
