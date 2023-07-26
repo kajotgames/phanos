@@ -6,11 +6,11 @@ from . import (
     metrics,
 )
 
-profiler: publisher.PhanosProfiler
-phanos_profiler: publisher.PhanosProfiler
+profiler: publisher.SyncProfiler
+phanos_profiler: publisher.SyncProfiler
 
 # default instance
-profiler = publisher.PhanosProfiler()
+profiler = publisher.SyncProfiler()
 
 # deprecated; for backward compatibility,
 phanos_profiler = profiler

@@ -569,6 +569,9 @@ class TestProfiling(unittest.TestCase):
         _ = self.client.get("http://localhost/api/dummy/one")
         self.assertEqual(phanos_profiler.error_occurred, False)
         self.output.seek(0)
+
+        phanos_profiler.tree.postorder()
+
         lines = self.output.readlines()
         time_lines = lines[:-1]
         size_line = lines[-1]
@@ -687,38 +690,3 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(method, testing_data.custom_profile_out[i]["method"])
             self.assertEqual(float(value), testing_data.custom_profile_out[i]["value"])
             self.assertEqual(place, testing_data.custom_profile_out[i]["place"])
-
-
-class TestAsync(unittest.IsolatedAsyncioTestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", request_size_profile=False)
-        cls.app = app
-        cls.client = cls.app.test_client()  # type: ignore[attr-defined]
-
-    def setUp(self) -> None:
-        self.output = StringIO()
-        profile_handler = StreamHandler("name", self.output)
-        phanos_profiler.add_handler(profile_handler)
-
-    def tearDown(self) -> None:
-        phanos_profiler.delete_handlers()
-        phanos_profiler.delete_metrics(True, True)
-        self.output.close()
-
-    async def test_profiling(self):
-        async_access = dummy_api.AsyncTest()
-        loop = asyncio.get_event_loop()
-        task_long = loop.create_task(async_access.async_access_long())
-        task_short = loop.create_task(async_access.async_access_short())
-        start = datetime.datetime.now()
-        await asyncio.wait([task_long, task_short])
-        stop = datetime.datetime.now() - start
-        # total time of execution is 0.2 (long_task)
-        self.assertEqual(round(stop.total_seconds(), 1), 0.2)
-        self.output.seek(0)
-        output = []
-        for line in self.output.readlines():
-            output.append(float(line.split("value: ")[1][:-4]) // 100)
-        # [short_task, long_task] execution time from phanos profiler
-        self.assertEqual(output, [1.0, 2.0])

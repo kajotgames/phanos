@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from time import sleep
 
 import flask
@@ -60,12 +61,18 @@ class AsyncTest:
     @staticmethod
     @phanos_profiler.profile
     async def async_access_short():
+        print("starting short task")
+        await asyncio.sleep(0.2)
+        print("between async shit")
         await asyncio.sleep(0.1)
+        print("short task finished")
 
     @staticmethod
     @phanos_profiler.profile
     async def async_access_long():
+        print("starting long task")
         await asyncio.sleep(0.2)
+        print("long task finished")
 
 
 @ns.route("/one")

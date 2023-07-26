@@ -1,5 +1,7 @@
 """ """
 from __future__ import annotations
+
+import datetime
 import inspect
 import logging
 import sys
@@ -10,7 +12,7 @@ from abc import abstractmethod
 import imp_prof.messaging.publisher
 from imp_prof.messaging.publisher import BlockingPublisher
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
-from .tree import MethodTreeNode
+from .tree import MethodTreeNode, ContextTree
 from . import log
 
 TIME_PROFILER = "time_profiler"
@@ -227,13 +229,14 @@ class StreamHandler(BaseHandler):
                 )
 
 
-class PhanosProfiler(log.InstanceLoggerMixin):
+class Profiler(log.InstanceLoggerMixin):
     """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
 
     metrics: typing.Dict[str, MetricWrapper]
 
     _root: MethodTreeNode
     current_node: MethodTreeNode
+    tree: ContextTree
 
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
@@ -267,6 +270,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         self.after_func = None
         self.before_root_func = None
         self.after_root_func = None
+        self.tree = ContextTree()
         super().__init__(logged_name="phanos")
 
     def config(
@@ -381,6 +385,43 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         self.handlers.clear()
         self.debug("all handlers deleted")
 
+    def handle_records_clear(self) -> None:
+        """Pass records to each registered Handler and clear stored records
+        method DO NOT clear MethodContext tree
+        """
+        # send records and log em
+        for metric in self.metrics.values():
+            records = metric.to_records()
+            for handler in self.handlers.values():
+                self.debug(f"handler %s handling metric %s", handler.handler_name, metric.name)
+                handler.handle(records, metric.name)
+            metric.cleanup()
+
+    def force_handle_records_clear(self) -> None:
+        """Method to force records handling
+
+        forces record handling. As side effect clears all metrics and clears MethodContext tree
+        """
+        # send records and log em
+        self.debug("Forcing record handling")
+        self.handle_records_clear()
+        self.current_node = self._root
+        self._root.clear_tree()
+
+
+class SyncProfiler(Profiler):
+    """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
+
+    # TODO: refactor sync profiler
+    def __init__(self) -> None:
+        """Initialize ProfilesPublisher
+
+        Initialization just creates new instance!!
+
+        """
+
+        super().__init__()
+
     def profile(self, func: typing.Callable) -> typing.Callable:
         """
         Decorator specifying which methods should be profiled.
@@ -399,6 +440,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             if self.handlers and self.handle_records:
                 if self.current_node == self._root:
                     self.error_occurred = False
+
                 self.current_node = self.current_node.add_child(MethodTreeNode(func, self.logger))
 
                 if self.current_node.parent == self._root:
@@ -424,19 +466,6 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                     self.error(f"{self.profile.__qualname__}: node {self.current_node.context!r} have no parent.")
                     raise ValueError(f"{self.current_node.context!r} have no parent")
 
-        async def async_inner(*args, **kwargs) -> typing.Any:
-            """async decorator version"""
-            before_function_handling(*args, **kwargs)
-            try:
-                result = await func(*args, **kwargs)
-            except Exception as e:
-                # in case of exception handle measured records, cleanup and reraise
-                self.force_handle_records_clear()
-                self.error_occurred = True
-                raise e
-            after_function_handling(result, *args, **kwargs)
-            return result
-
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync decorator version"""
             before_function_handling(*args, **kwargs)
@@ -450,8 +479,6 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             after_function_handling(result, *args, **kwargs)
             return result
 
-        if inspect.iscoroutinefunction(func):
-            return async_inner
         return sync_inner
 
     def _before_root_func(self, *args, func=None, **kwargs) -> None:
@@ -495,25 +522,116 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         if callable(self.after_func):
             self.after_func(*args, fn_result=fn_result, **kwargs)
 
-    def handle_records_clear(self) -> None:
-        """Pass records to each registered Handler and clear stored records
-        method DO NOT clear MethodContext tree
-        """
-        # send records and log em
-        for metric in self.metrics.values():
-            records = metric.to_records()
-            for handler in self.handlers.values():
-                self.debug(f"handler %s handling metric %s", handler.handler_name, metric.name)
-                handler.handle(records, metric.name)
-            metric.cleanup()
 
-    def force_handle_records_clear(self) -> None:
-        """Method to force records handling
+class AsyncProfiler(Profiler):
+    """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
 
-        forces record handling. As side effect clears all metrics and clears MethodContext tree
+    def __init__(self) -> None:
+        """Initialize ProfilesPublisher
+
+        Initialization just creates new instance!!
+
         """
-        # send records and log em
-        self.debug("Forcing record handling")
-        self.handle_records_clear()
-        self.current_node = self._root
-        self._root.clear_tree()
+
+        super().__init__()
+
+    def profile(self, func: typing.Callable) -> typing.Callable:
+        """
+        Decorator specifying which methods should be profiled.
+        Default profiler is time profiler which measures execution time of decorated methods
+
+        Usage: decorate methods which you want to be profiled
+
+        :param func: method or function which should be profiled
+        """
+
+        def before_function_handling(*args, **kwargs):
+            """Handlers profiling before profiled function execution (records start time)
+
+            Saves method context into MethodTreeNode, calls _before_root_func, _before_func
+            """
+            if self.handlers and self.handle_records:
+                if self.current_node == self._root:
+                    self.error_occurred = False
+                # TODO: here find context and insert into ContextTree
+                self.tree.find_context_and_insert(MethodTreeNode(func, self.logger))
+                self.current_node = self.current_node.add_child(MethodTreeNode(func, self.logger))
+
+                if self.current_node.parent == self._root:
+                    self._before_root_func(*args, func=func, **kwargs)
+                self._before_func(*args, func=func, **kwargs)
+
+        def after_function_handling(result, *args, **kwargs):
+            """Handles profiling after profiled function execution (records stop time)
+
+            Deletes method context from MethodTreeNode, calls _after_root_func, _after_func and handle records
+            if root function was executed
+            """
+            if self.handlers and self.handle_records:
+                self._after_func(*args, fn_result=result, **kwargs)
+
+                if self.current_node.parent == self._root:
+                    self._after_root_func(*args, fn_result=result, **kwargs)
+                    self.handle_records_clear()
+                if self.current_node.parent and not self.error_occurred:
+                    self.current_node = self.current_node.parent
+                    self.current_node.delete_child()
+                elif not self.error_occurred:
+                    self.error(f"{self.profile.__qualname__}: node {self.current_node.context!r} have no parent.")
+                    raise ValueError(f"{self.current_node.context!r} have no parent")
+
+        async def async_inner(*args, **kwargs) -> typing.Any:
+            """async decorator version"""
+            before_function_handling(*args, **kwargs)
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                # in case of exception handle measured records, cleanup and reraise
+                self.force_handle_records_clear()
+                self.error_occurred = True
+                raise e
+            after_function_handling(result, *args, **kwargs)
+            return result
+
+        return async_inner
+
+    def _before_root_func(self, *args, func=None, **kwargs) -> None:
+        """method executing before root function
+
+        :param function: root function
+        """
+        # users custom metrics operation recording
+        if callable(self.before_root_func):
+            self.before_root_func(*args, func=func, **kwargs)
+        # place for phanos metrics if needed
+
+    def _after_root_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
+        """method executing after the root function
+
+
+        :param fn_result: result of function
+        """
+        # phanos metrics
+        if self.resp_size_profile:
+            self.resp_size_profile.store_operation(
+                method=self.current_node.context, operation="rec", value=fn_result, label_values={}
+            )
+        # users custom metrics operation recording
+        if callable(self.after_root_func):
+            self.after_root_func(*args, fn_result=fn_result, **kwargs)
+
+    def _before_func(self, *args, func=None, **kwargs) -> None:
+        # users custom metrics operation recording
+        if callable(self.before_func):
+            self.before_func(*args, func=func, **kwargs)
+        # phanos metrics
+        if self.time_profile:
+            self.time_profile.start()
+
+    def _after_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
+        # phanos metrics
+        if self.time_profile and not self.error_occurred:
+            self.time_profile.store_operation(method=self.current_node.context, operation="stop", label_values={})
+        # users custom metrics operation recording
+        if callable(self.after_func):
+            self.after_func(*args, fn_result=fn_result, **kwargs)
