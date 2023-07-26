@@ -391,7 +391,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param func: method or function which should be profiled
         """
 
-        def before_function_handling(*args, **kwargs):
+        def before_function_handling(args, kwargs):
             """Handlers profiling before profiled function execution (records start time)
 
             Saves method context into MethodTreeNode, calls _before_root_func, _before_func
@@ -402,20 +402,20 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 self.current_node = self.current_node.add_child(MethodTreeNode(func, self.logger))
 
                 if self.current_node.parent == self._root:
-                    self._before_root_func(*args, func=func, **kwargs)
-                self._before_func(*args, func=func, **kwargs)
+                    self._before_root_func(func, args, kwargs)
+                self._before_func(func, args, kwargs)
 
-        def after_function_handling(result, *args, **kwargs):
+        def after_function_handling(result, args, kwargs):
             """Handles profiling after profiled function execution (records stop time)
 
             Deletes method context from MethodTreeNode, calls _after_root_func, _after_func and handle records
             if root function was executed
             """
             if self.handlers and self.handle_records:
-                self._after_func(*args, fn_result=result, **kwargs)
+                self._after_func(result, args, kwargs)
 
                 if self.current_node.parent == self._root:
-                    self._after_root_func(*args, fn_result=result, **kwargs)
+                    self._after_root_func(result, args, kwargs)
                     self.handle_records_clear()
                 if self.current_node.parent and not self.error_occurred:
                     self.current_node = self.current_node.parent
@@ -426,7 +426,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async decorator version"""
-            before_function_handling(*args, **kwargs)
+            before_function_handling(args, kwargs)
             try:
                 result = await func(*args, **kwargs)
             except Exception as e:
@@ -434,12 +434,12 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 self.force_handle_records_clear()
                 self.error_occurred = True
                 raise e
-            after_function_handling(result, *args, **kwargs)
+            after_function_handling(result, args, kwargs)
             return result
 
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync decorator version"""
-            before_function_handling(*args, **kwargs)
+            before_function_handling(args, kwargs)
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
@@ -447,24 +447,24 @@ class PhanosProfiler(log.InstanceLoggerMixin):
                 self.force_handle_records_clear()
                 self.error_occurred = True
                 raise e
-            after_function_handling(result, *args, **kwargs)
+            after_function_handling(result, args, kwargs)
             return result
 
         if inspect.iscoroutinefunction(func):
             return async_inner
         return sync_inner
 
-    def _before_root_func(self, *args, func=None, **kwargs) -> None:
+    def _before_root_func(self, func, args, kwargs) -> None:
         """method executing before root function
 
-        :param function: root function
+        :param func: root function
         """
         # users custom metrics operation recording
         if callable(self.before_root_func):
-            self.before_root_func(*args, func=func, **kwargs)
+            self.before_root_func(func, args, kwargs)
         # place for phanos metrics if needed
 
-    def _after_root_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
+    def _after_root_func(self, fn_result: typing.Any, args, kwargs) -> None:
         """method executing after the root function
 
 
@@ -477,23 +477,23 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             )
         # users custom metrics operation recording
         if callable(self.after_root_func):
-            self.after_root_func(*args, fn_result=fn_result, **kwargs)
+            self.after_root_func(fn_result, args, kwargs)
 
-    def _before_func(self, *args, func=None, **kwargs) -> None:
+    def _before_func(self, func, args, kwargs) -> None:
         # users custom metrics operation recording
         if callable(self.before_func):
-            self.before_func(*args, func=func, **kwargs)
+            self.before_func(func, args, kwargs)
         # phanos metrics
         if self.time_profile:
             self.time_profile.start()
 
-    def _after_func(self, *args, fn_result: typing.Any = None, **kwargs) -> None:
+    def _after_func(self, fn_result, args, kwargs) -> None:
         # phanos metrics
         if self.time_profile and not self.error_occurred:
             self.time_profile.store_operation(method=self.current_node.context, operation="stop", label_values={})
         # users custom metrics operation recording
         if callable(self.after_func):
-            self.after_func(*args, fn_result=fn_result, **kwargs)
+            self.after_func(fn_result, args, kwargs)
 
     def handle_records_clear(self) -> None:
         """Pass records to each registered Handler and clear stored records

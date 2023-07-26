@@ -623,10 +623,10 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.TIME_PROFILER)
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
-        def before_root_func(*args, func=None, **kwargs):
-            _ = args
-            _ = kwargs
-            _ = func
+        def before_root_func(func, args, kwargs):
+            print(func)
+            print(args)
+            print(kwargs)
             hist.store_operation(
                 method=phanos_profiler.current_node.context,
                 operation="observe",
@@ -636,7 +636,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_root_func = before_root_func
 
-        def before_func(*args, func=None, **kwargs):
+        def before_func(func, args, kwargs):
             _ = args
             _ = kwargs
             _ = func
@@ -649,7 +649,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_func = before_func
 
-        def after_func(*args, fn_result=None, **kwargs):
+        def after_func(fn_result, args, kwargs):
             _ = args
             _ = kwargs
             _ = fn_result
@@ -662,7 +662,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.after_func = after_func
 
-        def after_root_func(*args, fn_result=None, **kwargs):
+        def after_root_func(fn_result, args, kwargs):
             _ = args
             _ = kwargs
             _ = fn_result
