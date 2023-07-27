@@ -4,6 +4,7 @@ from . import (
     publisher,
     tree,
     metrics,
+    config,
 )
 
 profiler: publisher.PhanosProfiler
