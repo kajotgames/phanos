@@ -17,11 +17,11 @@ made automatically.
 It is possible to configure profile with configration dictionary with method `PhanosProfiler.dict_config(settings)` _(similar to `logging` `dictConfig`)_. 
 Attributes are:
 
-- `job` job _label_ for prometheus; usually name of app
-- `logger` name of logger
-- `time_profile` by default _profiler_ tracks execution time of profiled function/object
-- `handle_records` should handle recorded records #TODO @miroslav.bulicka descrive better
-- `handlers` serialized named handlers to publish profiled records
+- `job`_(optional)_ job _label_ for prometheus; usually name of app
+- `logger` _(optional)_ name of logger
+- `time_profile` _(optional)_ by default _profiler_ tracks execution time of profiled function/object
+- `handle_records` _(optional)_ should handle recorded records #TODO @miroslav.bulicka descrive better
+- `handlers` _(optional)_ serialized named handlers to publish profiled records
   - `class` class handler to initialized
   - `handler_name` handler name required argument of publishers
   - `**other argumend` - specific arguments required to construct instance of class f.e.: `output`
@@ -33,7 +33,7 @@ settings = {
     "job": "my_app", 
     "logger": "my_app_debug_logger", 
     "time_profile": True, 
-    "create_time_profiler": True, 
+    "handle_records": True, 
     "handlers": {
         "stdout_handler_ref": {
                 "class": "phanos.publisher.StreamHandler", 
