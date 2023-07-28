@@ -11,7 +11,9 @@ import imp_prof.messaging.publisher
 from imp_prof.messaging.publisher import BlockingPublisher
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
-from . import log
+from . import (
+    log
+)
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
@@ -294,6 +296,43 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         self._root = MethodTreeNode(None, self.logger)
         self.current_node = self._root
+
+    def dict_config(self, settings: dict[str, typing.Any]) -> None:
+        """
+        Configure profiler instance with dictionary config.
+        Set up profiling from config file, instead fo changing code for various environments.
+
+        Example:
+            ```
+            {
+                "job": "my_app",
+                "logger": "my_app_debug_logger",
+                "time_profile": True,
+                "handle_records": True,
+                "handlers": {
+                    "stdout_handler": {
+                        "class": "phanos.publisher.StreamHandler",
+                        "handler_name": "stdout_handler",
+                        "output": "ext://sys.stdout",
+                    }
+                }
+            }
+            ```
+
+        :param settings: dictionary of desired profiling set up
+        """
+        from . import config as phanos_config
+        if "logger" in settings:
+            self.logger = logging.getLogger(settings["logger"])
+        if "job" in settings:
+            self.job = settings["job"]
+        if settings.get("time_profile"):
+            self.create_time_profiler()
+        self.handle_records = settings.get("handle_records", True)
+        if "handlers" in settings:
+            named_handlers = phanos_config.create_handlers(settings["handlers"])
+            for handler in named_handlers.values():
+                self.add_handler(handler)
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""

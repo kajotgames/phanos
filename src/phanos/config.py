@@ -68,14 +68,15 @@ def create_handlers(configs: dict) -> typing.Dict[str, publisher.BaseHandler]:
 
     :param configs: serialized handler config;
         Example:
-        ```
-            {
+            ```
+            conf = {
                 "stdout_handler": {
-                    "class": "StreamHandler",
+                    "class": "phanos.publisher.StreamHandler",
                     "handler_name": "stdout_handler",
                     "output": "ext://sys.stdout",
+                }
             }
-        ```
+            ```
     :return: `{"stdout_handler": <StreamHandler instance>}`
     """
     new_handlers = {}
@@ -83,5 +84,5 @@ def create_handlers(configs: dict) -> typing.Dict[str, publisher.BaseHandler]:
         original_kw_args = copy.deepcopy(config)
         cls_handler = _to_callable(original_kw_args.pop("class"))
         kw_args = parse_arguments(original_kw_args)
-        new_handlers[ref_name] = cls_handler(kw_args)
+        new_handlers[ref_name] = cls_handler(**kw_args)
     return new_handlers
