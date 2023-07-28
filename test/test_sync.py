@@ -17,14 +17,9 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-
-from src.phanos import phanos_profiler, publisher
-from src.phanos.publisher import (
-    StreamHandler,
-    ImpProfHandler,
-    LoggerHandler,
-    BaseHandler,
-)
+from phanos import profilers
+from src.phanos import phanos_profiler
+from phanos.handlers import BaseHandler, ImpProfHandler, LoggerHandler, StreamHandler
 from src.phanos.tree import MethodTreeNode
 from test import testing_data, dummy_api
 from test.dummy_api import app, dummy_method, DummyDbAccess
@@ -54,41 +49,41 @@ class TestTree(unittest.TestCase):
         root.add_child(first)
         self.assertEqual(first.parent, root)
         self.assertEqual(root.children, [first])
-        self.assertEqual(first.context, "DummyDbAccess:test_class")
+        self.assertEqual(first.ctx.context, "DummyDbAccess:test_class")
         root.delete_child()
         self.assertEqual(root.children, [])
         self.assertEqual(first.parent, None)
         # method
         first = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
         root.add_child(first)
-        self.assertEqual(first.context, "DummyDbAccess:test_method")
+        self.assertEqual(first.ctx.context, "DummyDbAccess:test_method")
         root.delete_child()
         # function
         first = MethodTreeNode(dummy_method)
         root.add_child(first)
-        self.assertEqual(first.context, "dummy_api:dummy_method")
+        self.assertEqual(first.ctx.context, "dummy_api:dummy_method")
         root.delete_child()
         # descriptor
         access = DummyDbAccess()
         first = MethodTreeNode(access.__getattribute__)
         root.add_child(first)
-        self.assertEqual(first.context, "object:__getattribute__")
+        self.assertEqual(first.ctx.context, "object:__getattribute__")
         root.delete_child()
         # staticmethod
         first = MethodTreeNode(access.test_static)
         root.add_child(first)
-        self.assertEqual(first.context, "DummyDbAccess:test_static")
+        self.assertEqual(first.ctx.context, "DummyDbAccess:test_static")
         root.delete_child()
 
         first = MethodTreeNode(self.tearDown)
         root.add_child(first)
-        self.assertEqual(first.context, "TestTree:tearDown")
+        self.assertEqual(first.ctx.context, "TestTree:tearDown")
 
     def test_clear_tree(self):
-        root = phanos_profiler._root
+        root = phanos_profiler.tree.root
         _1 = MethodTreeNode(self.tearDown)
         root.add_child(_1)
-        self.assertEqual(_1.context, "TestTree:tearDown")
+        self.assertEqual(_1.ctx.context, "TestTree:tearDown")
         _1.add_child(MethodTreeNode(self.tearDown))
         _1.add_child(MethodTreeNode(self.tearDown))
         _1.add_child(MethodTreeNode(self.tearDown))
@@ -100,7 +95,7 @@ class TestTree(unittest.TestCase):
 
         phanos_profiler.clear()
         # no children exist but error should not be raised
-        phanos_profiler._root.delete_child()
+        phanos_profiler.tree.root.delete_child()
 
     def test_methods_between(self):
         output = StringIO()
@@ -186,7 +181,8 @@ class TestHandlers(unittest.TestCase):
 
     def test_rabbit_handler_publish(self):
         handler = None
-        with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
+        # TODO: fix mock
+        with patch("src.phanos.profilers.BlockingPublisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences
@@ -512,12 +508,12 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(len(phanos_profiler.metrics), length + 1)
         self.assertEqual(phanos_profiler.metrics.get("name"), None)
         # delete time_profiling metric
-        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
-        self.assertEqual(phanos_profiler.metrics.get(publisher.TIME_PROFILER), None)
+        phanos_profiler.delete_metric(profilers.TIME_PROFILER)
+        self.assertEqual(phanos_profiler.metrics.get(profilers.TIME_PROFILER), None)
         self.assertEqual(phanos_profiler.time_profile, None)
         # delete response size metric
-        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
-        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
+        phanos_profiler.delete_metric(profilers.RESPONSE_SIZE)
+        self.assertEqual(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE), None)
         self.assertEqual(phanos_profiler.resp_size_profile, None)
         # create response size metric
         phanos_profiler.create_response_size_profiler()
@@ -528,10 +524,10 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metrics()
         self.assertEqual(len(phanos_profiler.metrics), 1)
         self.assertIsNotNone(phanos_profiler.resp_size_profile, None)
-        self.assertIsNotNone(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE))
+        self.assertIsNotNone(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE))
         phanos_profiler.delete_metrics(rm_time_profile=True, rm_resp_size_profile=True)
         self.assertEqual(phanos_profiler.metrics, {})
-        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
+        self.assertEqual(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE), None)
 
         self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
 
@@ -563,14 +559,14 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric.item, [])
         # error_occurred will be set to false before root function of next profiling
         self.assertEqual(phanos_profiler.error_occurred, True)
-        self.assertEqual(phanos_profiler.current_node, phanos_profiler._root)
+        self.assertEqual(phanos_profiler.tree.current_node, phanos_profiler.tree.root)
 
         # profiling after request, where error_occurred
         _ = self.client.get("http://localhost/api/dummy/one")
         self.assertEqual(phanos_profiler.error_occurred, False)
         self.output.seek(0)
 
-        phanos_profiler.tree.postorder()
+        phanos_profiler.tree.postorder_print()
 
         lines = self.output.readlines()
         time_lines = lines[:-1]
@@ -600,8 +596,8 @@ class TestProfiling(unittest.TestCase):
             testing_data.profiling_out[-1]["method"],
         )
 
-        self.assertEqual(phanos_profiler.current_node, phanos_profiler._root)
-        self.assertEqual(phanos_profiler._root.children, [])
+        self.assertEqual(phanos_profiler.tree.current_node, phanos_profiler.tree.root)
+        self.assertEqual(phanos_profiler.tree.root.children, [])
 
         access = dummy_api.DummyDbAccess()
         self.output.truncate(0)
@@ -623,15 +619,15 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(len(phanos_profiler.metrics), 2)
         phanos_profiler.add_metric(hist)
         self.assertEqual(len(phanos_profiler.metrics), 3)
-        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
-        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
+        phanos_profiler.delete_metric(profilers.TIME_PROFILER)
+        phanos_profiler.delete_metric(profilers.RESPONSE_SIZE)
 
         def before_root_func(*args, func=None, **kwargs):
             _ = args
             _ = kwargs
             _ = func
             hist.store_operation(
-                method=phanos_profiler.current_node.context,
+                method=phanos_profiler.tree.current_node.ctx.context,
                 operation="observe",
                 value=1.0,
                 label_values={"place": "before_root"},
@@ -644,7 +640,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = func
             hist.store_operation(
-                method=phanos_profiler.current_node.context,
+                method=phanos_profiler.tree.current_node.ctx.context,
                 operation="observe",
                 value=2.0,
                 label_values={"place": "before_func"},
@@ -657,7 +653,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                method=phanos_profiler.current_node.context,
+                method=phanos_profiler.tree.current_node.ctx.context,
                 operation="observe",
                 value=3.0,
                 label_values={"place": "after_func"},
@@ -670,7 +666,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                method=phanos_profiler.current_node.context,
+                method=phanos_profiler.tree.current_node.ctx.context,
                 operation="observe",
                 value=4.0,
                 label_values={"place": "after_root"},
