@@ -1,5 +1,6 @@
 """Library for profiling"""
 from . import (
+    types,
     log,
     publisher,
     tree,

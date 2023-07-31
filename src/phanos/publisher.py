@@ -1,5 +1,6 @@
 """ """
 from __future__ import annotations
+
 import inspect
 import logging
 import sys
@@ -7,13 +8,13 @@ import threading
 import typing
 from abc import abstractmethod
 
-import imp_prof.messaging.publisher
-from imp_prof.messaging.publisher import BlockingPublisher
+from . import (
+    log,
+    types,
+    messaging,
+)
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
-from . import (
-    log
-)
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
@@ -23,7 +24,7 @@ class OutputFormatter:
     """class for converting Record type into profiling string"""
 
     @staticmethod
-    def record_to_str(name: str, record: imp_prof.Record) -> str:
+    def record_to_str(name: str, record: types.Record) -> str:
         """converts Record type into profiling string
 
         :param name: name of profiler
@@ -55,7 +56,7 @@ class BaseHandler:
     @abstractmethod
     def handle(
         self,
-        records: typing.List[imp_prof.Record],
+        records: typing.List[types.Record],
         profiler_name: str = "profiler",
     ) -> None:
         """
@@ -70,7 +71,7 @@ class BaseHandler:
 class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
-    publisher: BlockingPublisher
+    publisher: messaging.BlockingPublisher
     logger: typing.Optional[log.LoggerLike]
 
     def __init__(
@@ -89,7 +90,7 @@ class ImpProfHandler(BaseHandler):
         logger: typing.Optional[log.LoggerLike] = None,
         **kwargs,
     ) -> None:
-        """Creates BlockingPublisher instance (connection not established yet),
+        """Creates `messaging.BlockingPublisher` instance (connection not established yet),
          sets logger and create time profiler and response size profiler
 
         :param handler_name: name of handler. used for managing handlers
@@ -116,7 +117,7 @@ class ImpProfHandler(BaseHandler):
         super().__init__(handler_name)
 
         self.logger = logger or logging.getLogger(__name__)
-        self.publisher = BlockingPublisher(
+        self.publisher = messaging.BlockingPublisher(
             host=host,
             port=port,
             user=user,
@@ -132,7 +133,7 @@ class ImpProfHandler(BaseHandler):
         )
         try:
             self.publisher.connect()
-        except imp_prof.messaging.publisher.NETWORK_ERRORS as err:
+        except messaging.NETWORK_ERRORS as err:
             self.logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
@@ -141,7 +142,7 @@ class ImpProfHandler(BaseHandler):
 
     def handle(
         self,
-        records: typing.List[imp_prof.Record],
+        records: typing.List[types.Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Sends list of records to rabitMq queue
@@ -186,7 +187,7 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self.formatter = OutputFormatter()
 
-    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: typing.List[types.Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -214,7 +215,7 @@ class StreamHandler(BaseHandler):
         self.formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: typing.List[types.Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -322,6 +323,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param settings: dictionary of desired profiling set up
         """
         from . import config as phanos_config
+
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
         if "job" in settings:

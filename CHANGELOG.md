@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- limit `requirements` to minimum and separate development ones into `requirements-dev.txt`
+- `messaging` is now defined in this project and thus separated from `imp-prof`
 
 ## [0.0.0] - 2023-06-01
 
