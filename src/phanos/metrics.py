@@ -455,56 +455,6 @@ class TimeProfiler(Histogram):
     measured unit is milliseconds
     """
 
-    _start_ts: typing.List[dt]
-
-    def __init__(
-        self,
-        name: str,
-        job: str = "",
-        labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
-    ) -> None:
-        """
-        :param labels: label_names of metric viz. Type Record
-        :raises RuntimeError: if start timestamps < number of stop measurement operation
-        """
-        super().__init__(name, "mS", job, labels, logger)
-        self.operations = {"stop": self._stop}
-        self.default_operation = "stop"
-        self._start_ts = []
-        self.debug("TimeProfiler metric initialized")
-
-    # ############################### measurement operations -> checking labels, not sending records
-    def _stop(self, value) -> None:
-        """Records time difference between last start_ts and now"""
-        _ = value
-        try:
-            method_time = dt.now() - self._start_ts.pop(-1)
-            self._observe(
-                method_time.total_seconds() * 1000.0,
-            )
-        except IndexError:
-            self.error(f"{self._stop.__qualname__}: Cannot record operation. No start ts exists.")
-            raise RuntimeError("Number of start timestamps < number of stop measurement operations")
-
-    # ############################### helper operations -> not checking labels, not checking records
-    def start(self) -> None:
-        """Starts time measurement - stores dt.now()"""
-        self._start_ts.append(dt.now())
-
-    def cleanup(self) -> None:
-        """Method responsible for cleanup after publishing records"""
-        self._start_ts.clear()
-        super().cleanup()
-
-
-class AsyncTimeProfiler(Histogram):
-    """Class for measuring multiple time records in one endpoint.
-    Used for measuring time-consuming operations
-
-    measured unit is milliseconds
-    """
-
     def __init__(
         self,
         name: str,

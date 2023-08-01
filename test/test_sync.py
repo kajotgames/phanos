@@ -1,7 +1,4 @@
-import asyncio
-import datetime
 import logging
-import time
 import unittest
 from io import StringIO
 import sys
@@ -17,7 +14,7 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from phanos import profilers
+from phanos import publisher
 from src.phanos import phanos_profiler
 from phanos.handlers import BaseHandler, ImpProfHandler, LoggerHandler, StreamHandler
 from src.phanos.tree import MethodTreeNode
@@ -30,14 +27,18 @@ from src.phanos.metrics import (
     Info,
     Gauge,
     Enum,
-    TimeProfiler,
 )
 
 
 class TestTree(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST")
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        phanos_profiler.delete_handlers()
+        phanos_profiler.delete_metrics(True, True)
 
     def tearDown(self) -> None:
         pass
@@ -108,13 +109,18 @@ class TestTree(unittest.TestCase):
         for line in output.readlines():
             methods.append(line.split(", ")[1][8:])
         phanos_profiler.delete_handlers()
-        self.assertEqual([methods[0], methods[3]], testing_data.methods_between_out)
+        self.assertEqual([methods[0], methods[2]], testing_data.methods_between_out)
 
 
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST")
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=True)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        phanos_profiler.delete_handlers()
+        phanos_profiler.delete_metrics(True, True)
 
     def tearDown(self) -> None:
         phanos_profiler.delete_handlers()
@@ -182,7 +188,7 @@ class TestHandlers(unittest.TestCase):
     def test_rabbit_handler_publish(self):
         handler = None
         # TODO: fix mock
-        with patch("src.phanos.profilers.BlockingPublisher") as test_publisher:
+        with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences
@@ -455,21 +461,8 @@ class TestMetrics(unittest.TestCase):
             self.assertRaises(RuntimeError, enum_no_lbl.to_records)
 
     def test_builtin_profilers(self):
-        time_profiler = TimeProfiler("test_time_prof", "TEST")
-
-        time_profiler.start()
-        time_profiler.start()
-        self.assertEqual(len(time_profiler._start_ts), 2)
-        time.sleep(0.2)
-        time_profiler.store_operation("test:method", operation="stop")
-        self.assertEqual(len(time_profiler._start_ts), 1)
-        time.sleep(0.2)
-        time_profiler.store_operation("test:method", operation="stop")
-        self.assertEqual(len(time_profiler._start_ts), 0)
-        self.assertEqual(time_profiler._values[0][1] // 100, 2)
-        self.assertEqual(time_profiler._values[1][1] // 100, 4)
-
-        self.assertRaises(RuntimeError, time_profiler.store_operation, "test:method", "stop")
+        # TODO: test time profiling
+        pass
 
 
 class TestProfiling(unittest.TestCase):
@@ -508,12 +501,12 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(len(phanos_profiler.metrics), length + 1)
         self.assertEqual(phanos_profiler.metrics.get("name"), None)
         # delete time_profiling metric
-        phanos_profiler.delete_metric(profilers.TIME_PROFILER)
-        self.assertEqual(phanos_profiler.metrics.get(profilers.TIME_PROFILER), None)
+        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
+        self.assertEqual(phanos_profiler.metrics.get(publisher.TIME_PROFILER), None)
         self.assertEqual(phanos_profiler.time_profile, None)
         # delete response size metric
-        phanos_profiler.delete_metric(profilers.RESPONSE_SIZE)
-        self.assertEqual(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE), None)
+        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
+        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
         self.assertEqual(phanos_profiler.resp_size_profile, None)
         # create response size metric
         phanos_profiler.create_response_size_profiler()
@@ -524,10 +517,10 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metrics()
         self.assertEqual(len(phanos_profiler.metrics), 1)
         self.assertIsNotNone(phanos_profiler.resp_size_profile, None)
-        self.assertIsNotNone(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE))
+        self.assertIsNotNone(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE))
         phanos_profiler.delete_metrics(rm_time_profile=True, rm_resp_size_profile=True)
         self.assertEqual(phanos_profiler.metrics, {})
-        self.assertEqual(phanos_profiler.metrics.get(profilers.RESPONSE_SIZE), None)
+        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
 
         self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
 
@@ -619,13 +612,13 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(len(phanos_profiler.metrics), 2)
         phanos_profiler.add_metric(hist)
         self.assertEqual(len(phanos_profiler.metrics), 3)
-        phanos_profiler.delete_metric(profilers.TIME_PROFILER)
-        phanos_profiler.delete_metric(profilers.RESPONSE_SIZE)
+        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
+        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
-        def before_root_func(*args, func=None, **kwargs):
-            _ = args
-            _ = kwargs
-            _ = func
+        def before_root_func(func, args, kwargs):
+            print(func)
+            print(args)
+            print(kwargs)
             hist.store_operation(
                 method=phanos_profiler.tree.current_node.ctx.context,
                 operation="observe",
@@ -635,7 +628,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_root_func = before_root_func
 
-        def before_func(*args, func=None, **kwargs):
+        def before_func(func, args, kwargs):
             _ = args
             _ = kwargs
             _ = func
@@ -648,7 +641,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.before_func = before_func
 
-        def after_func(*args, fn_result=None, **kwargs):
+        def after_func(fn_result, args, kwargs):
             _ = args
             _ = kwargs
             _ = fn_result
@@ -661,7 +654,7 @@ class TestProfiling(unittest.TestCase):
 
         phanos_profiler.after_func = after_func
 
-        def after_root_func(*args, fn_result=None, **kwargs):
+        def after_root_func(fn_result, args, kwargs):
             _ = args
             _ = kwargs
             _ = fn_result

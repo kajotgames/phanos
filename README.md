@@ -12,6 +12,39 @@ of endpoint. Both can be deleted by `phanos.profiler.delete_metric(phanos.publis
 and `phanos.profiler.delete_metric(phanos.publisher.RESPONSE_SIZE)` if not deleted, measurements are
 made automatically.
 
+### Configuration
+
+It is possible to configure profile with configration dictionary with method `PhanosProfiler.dict_config(settings)` _(similar to `logging` `dictConfig`)_. 
+Attributes are:
+
+- `job`_(optional)_ job _label_ for prometheus; usually name of app
+- `logger` _(optional)_ name of logger
+- `time_profile` _(optional)_ by default _profiler_ tracks execution time of profiled function/object
+- `handle_records` _(optional)_ should handle recorded records #TODO @miroslav.bulicka descrive better
+- `handlers` _(optional)_ serialized named handlers to publish profiled records
+  - `class` class handler to initialized
+  - `handler_name` handler name required argument of publishers
+  - `**other argumend` - specific arguments required to construct instance of class f.e.: `output`
+
+Example of configuration dict:
+
+```python
+settings = {
+    "job": "my_app", 
+    "logger": "my_app_debug_logger", 
+    "time_profile": True, 
+    "handle_records": True, 
+    "handlers": {
+        "stdout_handler_ref": {
+                "class": "phanos.publisher.StreamHandler", 
+                "handler_name": "stdout_handler", 
+                "output": "ext://sys.stdout"
+            }
+        }
+}
+```
+
+
 ### Usage
 
 1. decorate methods from which you want to send metrics `@phanos.profile` shortcut for `@phanos.profiler.profile`
@@ -91,7 +124,7 @@ These classes represent Prometheus metrics without any modification.
 
 ### Add metrics automatic measurements
 
-'phanos.profiler' contains these four arguments:
+"phanos.profiler' contains these four arguments:
  
 - before_func : callable - executes before each profiled method
 - after_func : callable - executes after each profiled method

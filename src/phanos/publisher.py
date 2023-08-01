@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import inspect
 import logging
-import os
 import typing
 from datetime import datetime
 from functools import wraps
 
 from .handlers import BaseHandler
-from .metrics import MetricWrapper, TimeProfiler, ResponseSize, AsyncTimeProfiler
+from .metrics import MetricWrapper, ResponseSize, TimeProfiler
 from .tree import MethodTreeNode, ContextTree
 from . import log
 
@@ -24,7 +23,7 @@ class Profiler(log.InstanceLoggerMixin):
 
     tree: ContextTree
 
-    time_profile: typing.Optional[typing.Union[TimeProfiler, AsyncTimeProfiler]]
+    time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
 
     before_func: typing.Optional[typing.Callable]
@@ -62,10 +61,12 @@ class Profiler(log.InstanceLoggerMixin):
         self,
         logger=None,
         job: str = "",
+        time_profile: bool = True,
         request_size_profile: bool = True,
         handle_records: bool = True,
     ) -> None:
         """configure PhanosProfiler
+        :param time_profile:
         :param job: name of job
         :param logger: logger instance
         :param request_size_profile: should create instance of request size profiler
@@ -76,9 +77,56 @@ class Profiler(log.InstanceLoggerMixin):
         if request_size_profile:
             self.create_response_size_profiler()
 
+        if time_profile:
+            self.create_time_profiler()
+
         self.handle_records = handle_records
 
         self.tree = ContextTree(self.logger)
+
+    def dict_config(self, settings: dict[str, typing.Any]) -> None:
+        """
+        Configure profiler instance with dictionary config.
+        Set up profiling from config file, instead fo changing code for various environments.
+
+        Example:
+            ```
+            {
+                "job": "my_app",
+                "logger": "my_app_debug_logger",
+                "time_profile": True,
+                "handle_records": True,
+                "handlers": {
+                    "stdout_handler": {
+                        "class": "phanos.publisher.StreamHandler",
+                        "handler_name": "stdout_handler",
+                        "output": "ext://sys.stdout",
+                    }
+                }
+            }
+            ```
+
+        :param settings: dictionary of desired profiling set up
+        """
+        from . import config as phanos_config
+
+        if "logger" in settings:
+            self.logger = logging.getLogger(settings["logger"])
+        if "job" in settings:
+            self.job = settings["job"]
+        if settings.get("time_profile"):
+            self.create_time_profiler()
+        self.handle_records = settings.get("handle_records", True)
+        if "handlers" in settings:
+            named_handlers = phanos_config.create_handlers(settings["handlers"])
+            for handler in named_handlers.values():
+                self.add_handler(handler)
+
+    def create_time_profiler(self) -> None:
+        """Create time profiling metric"""
+        self.time_profile = TimeProfiler(TIME_PROFILER, job=self.job, logger=self.logger)
+        self.add_metric(self.time_profile)
+        self.debug("Phanos - time profiler created")
 
     def create_response_size_profiler(self) -> None:
         """create response size profiling metric"""
@@ -187,34 +235,6 @@ class Profiler(log.InstanceLoggerMixin):
 class SyncProfiler(Profiler):
     """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
 
-    # TODO: refactor sync profiler
-    def __init__(self) -> None:
-        """Initialize ProfilesPublisher
-
-        Initialization just creates new instance!!
-
-        """
-
-        super().__init__()
-
-    def config(
-        self,
-        logger=None,
-        job: str = "",
-        time_profile: bool = True,
-        request_size_profile: bool = True,
-        handle_records: bool = True,
-    ) -> None:
-        if time_profile:
-            self.create_time_profiler()
-        super().config(logger, job, request_size_profile, handle_records)
-
-    def create_time_profiler(self) -> None:
-        """Create time profiling metric"""
-        self.time_profile = TimeProfiler(TIME_PROFILER, job=self.job, logger=self.logger)
-        self.add_metric(self.time_profile)
-        self.debug("Phanos - time profiler created")
-
     def profile(self, func: typing.Callable) -> typing.Callable:
         """
         Decorator specifying which methods should be profiled.
@@ -227,6 +247,7 @@ class SyncProfiler(Profiler):
 
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync decorator version"""
+            start_ts = None
             if self.handlers and self.handle_records:
                 if self.tree.current_node is self.tree.root:
                     self.error_occurred = False
@@ -234,8 +255,17 @@ class SyncProfiler(Profiler):
                 self.tree.current_node = self.tree.current_node.add_child(MethodTreeNode(func, self.logger))
 
                 if self.tree.current_node.parent is self.tree.root:
-                    self._before_root_func(func, args, kwargs)
-                self._before_func(func, args, kwargs)
+                    # users custom metrics operation recording
+                    if callable(self.before_root_func):
+                        self.before_root_func(func, args, kwargs)
+                    # place for phanos metrics if needed
+
+                # users custom metrics operation recording
+                if callable(self.before_func):
+                    self.before_func(func, args, kwargs)
+                # phanos metrics
+                if self.time_profile:
+                    start_ts = datetime.now()
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
@@ -244,10 +274,24 @@ class SyncProfiler(Profiler):
                 self.error_occurred = True
                 raise e
             if self.handlers and self.handle_records:
-                self._after_func(result, args, kwargs)
+                # phanos metrics
+                if self.time_profile and not self.error_occurred:
+                    self.time_profile.store_operation(
+                        method=self.tree.current_node.ctx.context, operation="stop", label_values={}, start=start_ts
+                    )
+                # users custom metrics operation recording
+                if callable(self.after_func):
+                    self.after_func(result, args, kwargs)
 
                 if self.tree.current_node.parent is self.tree.root:
-                    self._after_root_func(result, args, kwargs)
+                    # phanos metrics
+                    if self.resp_size_profile:
+                        self.resp_size_profile.store_operation(
+                            method=self.tree.current_node.ctx.context, operation="rec", value=result, label_values={}
+                        )
+                    # users custom metrics operation recording
+                    if callable(self.after_root_func):
+                        self.after_root_func(result, args, kwargs)
                     self.handle_records_clear()
                 if self.tree.current_node.parent and not self.error_occurred:
                     self.tree.current_node = self.tree.current_node.parent
@@ -259,79 +303,9 @@ class SyncProfiler(Profiler):
 
         return sync_inner
 
-    def _before_root_func(self, *args, func=None, **kwargs) -> None:
-        """method executing before root function
-
-        :param function: root function
-        """
-        # users custom metrics operation recording
-        if callable(self.before_root_func):
-            self.before_root_func(*args, func=func, **kwargs)
-        # place for phanos metrics if needed
-
-    def _after_root_func(self, fn_result, args, kwargs) -> None:
-        """method executing after the root function
-
-
-        :param fn_result: result of function
-        """
-        # phanos metrics
-        if self.resp_size_profile:
-            self.resp_size_profile.store_operation(
-                method=self.tree.current_node.ctx.context, operation="rec", value=fn_result, label_values={}
-            )
-        # users custom metrics operation recording
-        if callable(self.after_root_func):
-            self.after_root_func(fn_result, args, kwargs)
-
-    def _before_func(self, func, args, kwargs) -> None:
-        # users custom metrics operation recording
-        if callable(self.before_func):
-            self.before_func(func, args, kwargs)
-        # phanos metrics
-        if self.time_profile:
-            self.time_profile.start()
-
-    def _after_func(self, fn_result, args, kwargs) -> None:
-        # phanos metrics
-        if self.time_profile and not self.error_occurred:
-            self.time_profile.store_operation(
-                method=self.tree.current_node.ctx.context, operation="stop", label_values={}
-            )
-        # users custom metrics operation recording
-        if callable(self.after_func):
-            self.after_func(fn_result, args, kwargs)
-
 
 class AsyncProfiler(Profiler):
     """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
-
-    def __init__(self) -> None:
-        """Initialize ProfilesPublisher
-
-        Initialization just creates new instance!!
-
-        """
-
-        super().__init__()
-
-    def config(
-        self,
-        logger=None,
-        job: str = "",
-        time_profile: bool = True,
-        request_size_profile: bool = True,
-        handle_records: bool = True,
-    ) -> None:
-        if time_profile:
-            self.create_time_profiler()
-        super().config(logger, job, request_size_profile, handle_records)
-
-    def create_time_profiler(self) -> None:
-        """Create time profiling metric"""
-        self.time_profile = AsyncTimeProfiler(TIME_PROFILER, job=self.job, logger=self.logger)
-        self.add_metric(self.time_profile)
-        self.debug("Phanos - time profiler created")
 
     def profile(self, func: typing.Callable) -> typing.Callable:
         """

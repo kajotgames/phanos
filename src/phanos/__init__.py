@@ -1,19 +1,20 @@
 """Library for profiling"""
 from . import (
     log,
-    profilers,
+    publisher,
     tree,
     metrics,
     handlers,
+    config,
 )
 
-sync_profiler: profilers.SyncProfiler
-async_profiler: profilers.AsyncProfiler
-phanos_profiler: profilers.SyncProfiler
+sync_profiler: publisher.SyncProfiler
+async_profiler: publisher.AsyncProfiler
+phanos_profiler: publisher.SyncProfiler
 
 # default instance
-sync_profiler = profilers.SyncProfiler()
-async_profiler = profilers.AsyncProfiler()
+sync_profiler = publisher.SyncProfiler()
+async_profiler = publisher.AsyncProfiler()
 # deprecated; for backward compatibility,
 phanos_profiler = sync_profiler
 
