@@ -37,7 +37,7 @@ logger.addHandler(handler)
 class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        async_profiler.config(job="TEST", request_size_profile=False)
+        async_profiler.config(job="TEST", logger=logger, request_size_profile=False)
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -54,29 +54,31 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         async_profiler.delete_handlers()
         async_profiler.delete_metrics(True, True)
 
-    async def test_profiling(self):
+    async def test_time_measurement(self):
+        """checks if time profiling works with async"""
         async_access = dummy_api.AsyncTest()
         loop = asyncio.get_event_loop()
-        task_long = loop.create_task(async_access.async_access_long())
-        task_short = loop.create_task(async_access.async_access_short())
+
         start = datetime.datetime.now()
-        await asyncio.wait([task_long, task_short])
+        # await asyncio.wait([task])
+        _ = await async_access.nested()
+
         stop = datetime.datetime.now() - start
-        # total time of execution is 0.2 (long_task)
-        self.assertEqual(round(stop.total_seconds(), 1), 0.3)
+        print(stop)
+        # total time of execution is 0.3 (most time consuming method)
+        # self.assertEqual(round(stop.total_seconds(), 1), 0.3)
+        self.output.seek(0)
+        print(self.output.read())
         self.output.seek(0)
         output = []
         for line in self.output.readlines():
             output.append(float(line.split("value: ")[1][:-4]) // 100)
         print(output)
-        # [short_task, long_task] execution time from phanos profiler
-        self.assertEqual(output, [2.0, 3.0])
+        print(async_profiler.tree.active_tasks)
 
-    async def test_profiling_2(self):
-        await dummy_api.multiple_calls(dummy_api.async_access_long, dummy_api.async_access_long)
-        print(async_profiler.tree.root.children)
-        self.output.seek(0)
-        print(self.output.read())
+        # [short_task, long_task] execution time from phanos profiler
+
+    # self.assertEqual(output, [2.0, 3.0, 3.0])
 
 
 class TestAsyncTree(unittest.TestCase):

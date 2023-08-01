@@ -1,9 +1,12 @@
 """ """
 from __future__ import annotations
 
+import inspect
 import logging
+import os
 import typing
 from datetime import datetime
+from functools import wraps
 
 from .handlers import BaseHandler
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize, AsyncTimeProfiler
@@ -340,6 +343,7 @@ class AsyncProfiler(Profiler):
         :param func: method or function which should be profiled
         """
 
+        @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async decorator version"""
             current_node = None
@@ -348,8 +352,12 @@ class AsyncProfiler(Profiler):
                 if not self.tree.root.children:
                     self.error_occurred = False
                 current_node = MethodTreeNode(func, self.logger)
-                creation_ts = current_node.ctx.creation_ts
-                self.tree.find_context_and_insert(current_node)
+                self.tree.current_node = current_node
+
+                await self.tree.find_context_and_insert(current_node)
+
+                self.tree.postorder_print()
+                self.debug("EOT")
 
                 if current_node.parent == self.tree.root:
                     self._before_root_func(func, args, kwargs)
@@ -357,7 +365,11 @@ class AsyncProfiler(Profiler):
                 start_ts = datetime.now()
 
             try:
-                result = await func(*args, **kwargs)
+                if inspect.iscoroutinefunction(func):
+                    coro = func(*args, **kwargs)
+                    result = await coro
+                else:
+                    result = func(*args, **kwargs)
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
                 self.force_handle_records_clear()
@@ -402,7 +414,7 @@ class AsyncProfiler(Profiler):
         # phanos metrics
         if self.resp_size_profile:
             self.resp_size_profile.store_operation(
-                method=self.tree.current_node.context, operation="rec", value=fn_result, label_values={}
+                method=str(self.tree.current_node.ctx), operation="rec", value=fn_result, label_values={}
             )
         # users custom metrics operation recording
         if callable(self.after_root_func):

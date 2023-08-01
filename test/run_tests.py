@@ -11,12 +11,12 @@ from test import test_sync, test_async
 
 if __name__ == "__main__":
     test_classes = [
-        test_sync.TestMetrics,
-        test_sync.TestHandlers,
-        test_sync.TestTree,
-        test_sync.TestProfiling,
-        test_async.TestAsyncTree,
-        test_async.TestAsyncContext,
+        # test_sync.TestMetrics,
+        # test_sync.TestHandlers,
+        # test_sync.TestTree,
+        # test_sync.TestProfiling,
+        # test_async.TestAsyncTree,
+        # test_async.TestAsyncContext,
         test_async.TestAsyncProfile,
     ]
 

@@ -68,20 +68,20 @@ class AsyncTest:
     async def async_access_long():
         await asyncio.sleep(0.2)
 
-    @staticmethod
     @async_profile
-    async def multiple_calls(func1, func2):
-        await asyncio.sleep(0.1)
-        await func1()
-        await asyncio.sleep(0.2)
-        await func2()
+    async def multiple_calls(self):
+        loop = asyncio.get_event_loop()
+        await loop.create_task(self.async_access_long(), name="long")
+        await loop.create_task(self.async_access_short(), name="short")
+        # await asyncio.wait([task1, task2])
 
-    @staticmethod
     @async_profile
-    async def nested(func, nested1, nested2):
-        await asyncio.sleep(0.1)
-        await func(nested1(), nested2())
-        await asyncio.sleep(0.2)
+    async def nested(self):
+        loop = asyncio.get_event_loop()
+        await self.multiple_calls()
+        await loop.create_task(self.async_access_short(), name="nested-short")
+        # await asyncio.wait([task1, task2])
+        return 5
 
 
 @async_profile
@@ -96,11 +96,16 @@ async def async_access_long():
 
 
 @async_profile
-async def multiple_calls(func1, func2):
-    await asyncio.sleep(0.1)
-    await func1()
-    await asyncio.sleep(0.2)
-    await func2()
+async def multiple_calls():
+    loop = asyncio.get_event_loop()
+    task1 = loop.create_task(async_access_long())
+    task2 = loop.create_task(async_access_short())
+    await asyncio.wait([task1, task2])
+
+
+@async_profile
+async def nested():
+    await multiple_calls()
 
 
 @ns.route("/one")
