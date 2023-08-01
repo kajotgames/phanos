@@ -73,6 +73,7 @@ class AsyncTest:
         loop = asyncio.get_event_loop()
         await loop.create_task(self.async_access_long(), name="long")
         await loop.create_task(self.async_access_short(), name="short")
+        self.sync_in_async()
         # await asyncio.wait([task1, task2])
 
     @async_profile
@@ -82,6 +83,11 @@ class AsyncTest:
         await loop.create_task(self.async_access_short(), name="nested-short")
         # await asyncio.wait([task1, task2])
         return 5
+
+    @staticmethod
+    @async_profile
+    def sync_in_async():
+        sleep(0.2)
 
 
 @async_profile

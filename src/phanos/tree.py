@@ -109,7 +109,8 @@ class Context:
             child.context = self.context + "." + child.context
 
     # TODO: movee or smthing
-    def get_await_stack(self, coro):
+    @staticmethod
+    def get_await_stack(coro):
         """Return a coroutine's chain of awaiters.
 
         This follows the cr_await links.
@@ -120,9 +121,8 @@ class Context:
             coro = coro.cr_await
         return stack
 
-    def get_task_tree(
-        self,
-    ):
+    @staticmethod
+    def get_task_tree():
         """Return the task tree dict {awaited: awaiting}.
         This follows the _fut_waiter links and constructs a map
         from awaited tasks to the tasks that await them.
@@ -175,7 +175,7 @@ class Context:
 
         return await asyncio.create_task(helper(task), name="TaskStackHelper")
 
-    def report_task_stack(self, tasks) -> typing.List[str]:
+    def find_task_context(self, tasks) -> typing.List[str]:
         """Helper to summarize a task stack."""
         coro_stack = []
         for task, awaiters in reversed(tasks):
@@ -205,7 +205,7 @@ class Context:
                 active_tasks.append(task.get_name())
                 self.task_name = task.get_name()
                 tree = await self.task_stack(task)
-                stack = self.report_task_stack(tree)
+                stack = self.find_task_context(tree)
                 root_idx = None
                 for idx, name in enumerate(stack, 0):
                     if name.replace(".", ":") in root_contexts:
@@ -337,6 +337,10 @@ class ContextTree(log.InstanceLoggerMixin):
 
                 for child_to_move in node.children:
                     child_to_move.parent = node.parent
+
+                node.children = []
+                node.parent = None
+
                 break
             self.delete_node(node, child)
 

@@ -231,10 +231,6 @@ class Profiler(log.InstanceLoggerMixin):
         self.tree.current_node = self.tree.root
         self.tree.clear()
 
-
-class SyncProfiler(Profiler):
-    """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
-
     def profile(self, func: typing.Callable) -> typing.Callable:
         """
         Decorator specifying which methods should be profiled.
@@ -245,6 +241,7 @@ class SyncProfiler(Profiler):
         :param func: method or function which should be profiled
         """
 
+        @wraps(func)
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync decorator version"""
             start_ts = None
@@ -301,22 +298,6 @@ class SyncProfiler(Profiler):
                     raise ValueError(f"{self.tree.current_node.ctx!r} have no parent")
             return result
 
-        return sync_inner
-
-
-class AsyncProfiler(Profiler):
-    """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
-
-    def profile(self, func: typing.Callable) -> typing.Callable:
-        """
-        Decorator specifying which methods should be profiled.
-        Default profiler is time profiler which measures execution time of decorated methods
-
-        Usage: decorate methods which you want to be profiled
-
-        :param func: method or function which should be profiled
-        """
-
         @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async decorator version"""
@@ -339,11 +320,8 @@ class AsyncProfiler(Profiler):
                 start_ts = datetime.now()
 
             try:
-                if inspect.iscoroutinefunction(func):
-                    coro = func(*args, **kwargs)
-                    result = await coro
-                else:
-                    result = func(*args, **kwargs)
+                coro = func(*args, **kwargs)
+                result = await coro
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
                 self.force_handle_records_clear()
@@ -367,7 +345,9 @@ class AsyncProfiler(Profiler):
 
             return result
 
-        return async_inner
+        if inspect.iscoroutinefunction(func):
+            return async_inner
+        return sync_inner
 
     def _before_root_func(self, func, args, kwargs) -> None:
         """method executing before root function
@@ -405,13 +385,3 @@ class AsyncProfiler(Profiler):
         # users custom metrics operation recording
         if callable(self.after_func):
             self.after_func(fn_result, args, kwargs)
-
-    def force_handle_records_clear(self) -> None:
-        """Method to force records handling
-
-        forces record handling. As side effect clears all metrics and clears MethodContext tree
-        """
-        # send records and log em
-        self.debug("Forcing record handling")
-        self.handle_records_clear()
-        self.tree.clear()

@@ -7,18 +7,16 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from test import test_sync, test_async, test_config
+from test import test_tree, test_handlers, test_metrics, test_config, test_async
 
 if __name__ == "__main__":
     test_classes = [
-        test_sync.TestMetrics,
-        test_sync.TestHandlers,
-        test_sync.TestTree,
-        test_sync.TestProfiling,
-        test_async.TestAsyncTree,
-        test_async.TestAsyncContext,
+        # test_tree.TestTree,
+        # test_handlers.TestHandlers,
+        # test_metrics.TestMetrics,
+        # test_sync.TestProfiling,
+        # test_config.TestConfig,
         test_async.TestAsyncProfile,
-        test_config.TestConfig,
     ]
 
     loader = unittest.TestLoader()

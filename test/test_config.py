@@ -60,7 +60,7 @@ class TestConfig(unittest.TestCase):
         self.assertEquals(HANDLER_NAME, parsed[HANDLER_REFERENCE].handler_name)
 
     def test_dict_config(self):
-        _test_profiler = phanos.publisher.SyncProfiler()
+        _test_profiler = phanos.publisher.Profiler()
         try:
             _test_profiler.dict_config(SETTING_DICT)
         except (KeyError, ValueError, IndexError, Exception) as e:

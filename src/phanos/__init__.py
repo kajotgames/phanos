@@ -8,13 +8,13 @@ from . import (
     config,
 )
 
-sync_profiler: publisher.SyncProfiler
-async_profiler: publisher.AsyncProfiler
-phanos_profiler: publisher.SyncProfiler
+sync_profiler: publisher.Profiler
+async_profiler: publisher.Profiler
+phanos_profiler: publisher.Profiler
 
 # default instance
-sync_profiler = publisher.SyncProfiler()
-async_profiler = publisher.AsyncProfiler()
+sync_profiler = publisher.Profiler()
+async_profiler = publisher.Profiler()
 # deprecated; for backward compatibility,
 phanos_profiler = sync_profiler
 
