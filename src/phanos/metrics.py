@@ -6,7 +6,6 @@ import sys
 import typing
 from datetime import datetime as dt
 
-from flask import current_app as app
 from imp_prof import Record
 
 from . import log
@@ -117,13 +116,6 @@ class MetricWrapper(log.InstanceLoggerMixin):
         :param kwargs: will be passed to specific operation of given metric
         :raise ValueError: if operation does not exist for given metric.
         """
-        if self.job == "":
-            try:
-                with app.app_context():
-                    self.job = app.import_name
-            except RuntimeError:
-                pass
-
         if label_values is None:
             label_values = {}
 
