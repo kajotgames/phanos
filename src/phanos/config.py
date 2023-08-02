@@ -1,20 +1,13 @@
 import copy
 import importlib
 import typing
+
 from . import (
     publisher,
 )
 
 """
-example_config = {
-    "handlers": {
-        "stdout_handler": {
-            "class": "phanos.publisher.StreamHandler",
-            "handler_name": "stdout_handler",
-            "output": "ext://sys.stdout",
-        }
-    },
-}
+res
 """
 
 EXTERNAL_PREFIX = "ext://"

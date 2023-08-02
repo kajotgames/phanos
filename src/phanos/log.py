@@ -1,11 +1,12 @@
 import logging
 import typing
 
-LoggerLike = typing.Union[logging.Logger, logging.LoggerAdapter]
+from .types import LoggerLike
 
 
 class InstanceLoggerMixin:
     """Adds method for instance logging"""
+
     __slots__ = (
         "logger",
         "logged_name",
@@ -14,12 +15,12 @@ class InstanceLoggerMixin:
     logged_name: str
 
     def __init__(
-            self,
-            *args,
-            logged_name: typing.Optional[str] = None,
-            logger: typing.Optional[LoggerLike] = None,
-            logger_name: typing.Optional[str] = None,
-            **kwargs,
+        self,
+        *args,
+        logged_name: typing.Optional[str] = None,
+        logger: typing.Optional[LoggerLike] = None,
+        logger_name: typing.Optional[str] = None,
+        **kwargs,
     ) -> None:
         """
         Bind logger to class logger.

@@ -6,9 +6,8 @@ import sys
 import typing
 from datetime import datetime as dt
 
-from imp_prof import Record
-
 from . import log
+from .types import Record
 
 
 class MetricWrapper(log.InstanceLoggerMixin):

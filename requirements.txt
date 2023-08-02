@@ -1,3 +1,4 @@
 pip>=23.1.2
 pika>=1.3.2
-imp_prof>=0.1.2
+aio_pika>=9.2
+orjson>=3.9
