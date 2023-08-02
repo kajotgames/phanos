@@ -7,7 +7,7 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from test import test_metric
+from test import test_metric, test_config
 
 if __name__ == "__main__":
     test_classes = [
@@ -16,6 +16,7 @@ if __name__ == "__main__":
         test_metric.TestTree,
         test_metric.TestProfiling,
         test_metric.TestAsync,
+        test_config.TestConfig,
     ]
 
     loader = unittest.TestLoader()

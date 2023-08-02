@@ -11,9 +11,7 @@ import imp_prof.messaging.publisher
 from imp_prof.messaging.publisher import BlockingPublisher
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
-from . import (
-    log
-)
+from . import log
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
@@ -276,7 +274,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         logger=None,
         job: str = "",
         time_profile: bool = True,
-        request_size_profile: bool = True,
+        request_size_profile: bool = False,
         handle_records: bool = True,
     ) -> None:
         """configure PhanosProfiler
@@ -322,6 +320,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         :param settings: dictionary of desired profiling set up
         """
         from . import config as phanos_config
+
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
         if "job" in settings:
