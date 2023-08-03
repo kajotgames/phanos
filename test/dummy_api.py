@@ -5,22 +5,22 @@ import flask
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
 
-from src.phanos import phanos_profiler, sync_profile, async_profile
-from phanos.handlers import LoggerHandler
+from src.phanos import profile, profile
 
 ns = Namespace("dummy")
 
 
-def dummy_method():
+def dummy_func():
     pass
 
 
-@sync_profile
+# for context testing inside list comprehension
+@profile
 def test_inside_list_comp():
     return 5
 
 
-@sync_profile
+@profile
 def test_list_comp():
     _ = [test_inside_list_comp() for _ in range(1)]
 
@@ -38,11 +38,11 @@ class DummyDbAccess:
         pass
 
     @classmethod
-    @sync_profile
+    @profile
     def first_access(cls):
         sleep(0.2)
 
-    @sync_profile
+    @profile
     def second_access(self):
         self.first_access()
         sleep(0.3)
@@ -50,7 +50,7 @@ class DummyDbAccess:
     def third_access(self):
         self.second_access()
 
-    @sync_profile
+    @profile
     def raise_access(self):
         self.first_access()
         raise RuntimeError()
@@ -58,50 +58,70 @@ class DummyDbAccess:
 
 class AsyncTest:
     @staticmethod
-    @async_profile
+    @profile
     async def async_access_short():
         await asyncio.sleep(0.2)
         await asyncio.sleep(0.1)
 
     @staticmethod
-    @async_profile
+    @profile
     async def async_access_long():
         await asyncio.sleep(0.2)
 
-    @async_profile
-    async def multiple_calls(self):
-        loop = asyncio.get_event_loop()
-        await loop.create_task(self.async_access_long(), name="long")
-        await loop.create_task(self.async_access_short(), name="short")
-        self.sync_in_async()
-        # await asyncio.wait([task1, task2])
-
-    @async_profile
-    async def nested(self):
-        loop = asyncio.get_event_loop()
-        await self.multiple_calls()
-        await loop.create_task(self.async_access_short(), name="nested-short")
-        # await asyncio.wait([task1, task2])
-        return 5
-
     @staticmethod
-    @async_profile
-    def sync_in_async():
+    @profile
+    def sync_access_long():
         sleep(0.2)
 
+    @profile
+    async def await_test(self):
+        await self.async_access_short()
+        await self.async_access_long()
 
-@async_profile
+    @profile
+    async def task_nested(self):
+        await self.async_access_short()
+
+    @profile
+    async def task_test(self):
+        loop = asyncio.get_event_loop()
+        # task with no await_test
+        loop.create_task(self.async_access_long())
+        await asyncio.wait([asyncio.create_task(self.task_nested())])
+
+    @profile
+    async def test_mix(self):
+        await asyncio.wait([asyncio.create_task(self.task_test())])
+        await asyncio.wait([asyncio.create_task(self.task_test())])
+
+    @profile
+    async def nested(self):
+        await self.async_access_short()
+
+    @profile
+    async def sync_in_async(self):
+        self.sync_access_long()
+
+    @profile
+    async def raise_error(self):
+        loop = asyncio.get_event_loop()
+        await self.async_access_short()
+        loop.create_task(self.async_access_short())
+        raise RuntimeError()
+
+
+@profile
 async def async_access_short():
     await asyncio.sleep(0.2)
     await asyncio.sleep(0.1)
 
 
-@async_profile
+@profile
 async def async_access_long():
     await asyncio.sleep(0.2)
 
 
-@async_profile
+@profile
 async def multiple_calls():
     loop = asyncio.get_event_loop()
     task1 = loop.create_task(async_access_long())
@@ -109,7 +129,7 @@ async def multiple_calls():
     await asyncio.wait([task1, task2])
 
 
-@async_profile
+@profile
 async def nested():
     await multiple_calls()
 
@@ -118,30 +138,30 @@ async def nested():
 class DummyResource(Resource):
     access = DummyDbAccess()
 
-    @sync_profile
+    @profile
     def get(self):
         self.access.first_access()
         self.access.second_access()
         return {"success": True}, 201
 
-    @sync_profile
+    @profile
     def get_(self):
         self.access.third_access()
         return {"success": True}, 201
 
     # for testing nested api calls
-    @sync_profile
+    @profile
     def post(self):
         with app.app_context():
             return app.test_client().delete("/api/dummy/one")
 
-    @sync_profile
+    @profile
     def delete(self):
         with app.app_context():
             response = app.test_client().put("/api/dummy/one")
         return response.json, response.status_code
 
-    @sync_profile
+    @profile
     def put(self):
         flask.abort(400, "some shit")
         return {"success", True}, 200
@@ -153,10 +173,3 @@ api = Api(
     prefix="/api",
 )
 api.add_namespace(ns)
-
-if __name__ == "__main__":
-    phanos_profiler.config()
-    handler = LoggerHandler("asd")
-    phanos_profiler.add_handler(handler)
-    print("starting profile")
-    _ = test_list_comp()

@@ -1,7 +1,13 @@
 # run with `python -m unittest -v test/test_config.py`
 # or for coverage `python -m coverage run -m unittest -v test/test_config.py`
-
+import sys
 import unittest
+from os.path import join, dirname, abspath
+
+path = join(join(dirname(__file__), ".."), "")
+path = abspath(path)
+if path not in sys.path:
+    sys.path.insert(0, path)
 
 from src import phanos
 
@@ -57,7 +63,7 @@ class TestConfig(unittest.TestCase):
         for key in HANDLERS_DICT:
             self.assertIn(key, parsed)
         self.assertIsInstance(parsed[HANDLER_REFERENCE], phanos.handlers.StreamHandler)
-        self.assertEquals(HANDLER_NAME, parsed[HANDLER_REFERENCE].handler_name)
+        self.assertEqual(HANDLER_NAME, parsed[HANDLER_REFERENCE].handler_name)
 
     def test_dict_config(self):
         _test_profiler = phanos.publisher.Profiler()

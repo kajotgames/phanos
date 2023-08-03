@@ -7,17 +7,16 @@ from . import (
     handlers,
     config,
 )
+from .tree import MethodTreeNode
 
-sync_profiler: publisher.Profiler
-async_profiler: publisher.Profiler
+
+profiler: publisher.Profiler
 phanos_profiler: publisher.Profiler
 
 # default instance
-sync_profiler = publisher.Profiler()
-async_profiler = publisher.Profiler()
+profiler = publisher.Profiler()
 # deprecated; for backward compatibility,
-phanos_profiler = sync_profiler
+phanos_profiler = profiler
 
 # default instance profile method
-sync_profile = sync_profiler.profile
-async_profile = async_profiler.profile
+profile = profiler.profile

@@ -2,17 +2,23 @@ import logging
 import sys
 import unittest
 from io import StringIO
+from os.path import join, dirname, abspath
 from unittest.mock import patch, MagicMock
 
-from phanos import phanos_profiler
-from phanos.handlers import BaseHandler, StreamHandler, LoggerHandler, ImpProfHandler
+path = join(join(dirname(__file__), ".."), "")
+path = abspath(path)
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+from src.phanos import phanos_profiler
+from src.phanos.handlers import BaseHandler, StreamHandler, LoggerHandler, ImpProfHandler
 from test import testing_data
 
 
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=True)
+        phanos_profiler.config(job="TEST", time_profile=True, response_size_profile=True)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -83,9 +89,8 @@ class TestHandlers(unittest.TestCase):
         self.assertRaises(RuntimeError, ImpProfHandler, "handle")
 
     def test_rabbit_handler_publish(self):
-        handler = None
         # TODO: fix mock
-        with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
+        with patch.object(ImpProfHandler, "publisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences

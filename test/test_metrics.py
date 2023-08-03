@@ -1,10 +1,17 @@
+import sys
 import unittest
+from os.path import join, dirname, abspath
 
 from flask import Flask
 from flask.ctx import AppContext
 from flask.testing import FlaskClient
 
-from phanos.metrics import Histogram, Summary, Counter, Info, Gauge, Enum
+path = join(join(dirname(__file__), ".."), "")
+path = abspath(path)
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+from src.phanos.metrics import Histogram, Summary, Counter, Info, Gauge, Enum
 from test import testing_data
 from test.dummy_api import app
 

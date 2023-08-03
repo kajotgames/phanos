@@ -1,21 +1,25 @@
+import asyncio
 import unittest
 import sys
 from os.path import dirname, abspath, join
+from time import sleep
+
+import aiomonitor
 
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from test import test_tree, test_handlers, test_metrics, test_config, test_async
+from test import test_tree, test_handlers, test_metrics, test_config, test_async, test_sync
 
 if __name__ == "__main__":
     test_classes = [
-        # test_tree.TestTree,
-        # test_handlers.TestHandlers,
-        # test_metrics.TestMetrics,
-        # test_sync.TestProfiling,
-        # test_config.TestConfig,
+        test_tree.TestTree,
+        test_handlers.TestHandlers,
+        test_metrics.TestMetrics,
+        test_sync.TestProfiling,
+        test_config.TestConfig,
         test_async.TestAsyncProfile,
     ]
 

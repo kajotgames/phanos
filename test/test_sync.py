@@ -8,14 +8,15 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from phanos import publisher
+from src.phanos import publisher
 from src.phanos import phanos_profiler
-from phanos.handlers import StreamHandler
+from src.phanos.handlers import StreamHandler
 from test import testing_data, dummy_api
 from test.dummy_api import app, DummyDbAccess
 from src.phanos.metrics import (
     Histogram,
 )
+from src.phanos.publisher import curr_node
 
 
 class TestProfiling(unittest.TestCase):
@@ -40,21 +41,6 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.before_func = None
         phanos_profiler.after_func = None
         self.output.close()
-
-    def test_methods_between(self):
-        """Test method for geting context between profiled methods"""
-        output = StringIO()
-        str_handler = StreamHandler("str_handler", output)
-        phanos_profiler.add_handler(str_handler)
-        dummy_api.test_list_comp()
-        dummy_api.DummyResource().get_()
-        output.seek(0)
-        print(output.read())
-        methods = []
-        for line in output.readlines():
-            methods.append(line.split(", ")[1][8:])
-        phanos_profiler.delete_handlers()
-        self.assertEqual([methods[0], methods[2]], testing_data.methods_between_out)
 
     def test_metric_management(self):
         length = len(phanos_profiler.metrics)
@@ -120,14 +106,12 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric.item, [])
         # error_occurred will be set to false before root function of next profiling
         self.assertEqual(phanos_profiler.error_occurred, True)
-        self.assertEqual(phanos_profiler.tree.current_node, phanos_profiler.tree.root)
+        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
 
         # profiling after request, where error_occurred
         _ = self.client.get("http://localhost/api/dummy/one")
         self.assertEqual(phanos_profiler.error_occurred, False)
         self.output.seek(0)
-
-        phanos_profiler.tree.postorder_print()
 
         lines = self.output.readlines()
         time_lines = lines[:-1]
@@ -157,7 +141,7 @@ class TestProfiling(unittest.TestCase):
             testing_data.profiling_out[-1]["method"],
         )
 
-        self.assertEqual(phanos_profiler.tree.current_node, phanos_profiler.tree.root)
+        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
         self.assertEqual(phanos_profiler.tree.root.children, [])
 
         access = dummy_api.DummyDbAccess()
@@ -184,11 +168,8 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
         def before_root_func(func, args, kwargs):
-            print(func)
-            print(args)
-            print(kwargs)
             hist.store_operation(
-                method=phanos_profiler.tree.current_node.ctx.context,
+                method=curr_node.get().ctx.value,
                 operation="observe",
                 value=1.0,
                 label_values={"place": "before_root"},
@@ -201,7 +182,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = func
             hist.store_operation(
-                method=phanos_profiler.tree.current_node.ctx.context,
+                method=curr_node.get().ctx.value,
                 operation="observe",
                 value=2.0,
                 label_values={"place": "before_func"},
@@ -214,7 +195,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                method=phanos_profiler.tree.current_node.ctx.context,
+                method=curr_node.get().ctx.value,
                 operation="observe",
                 value=3.0,
                 label_values={"place": "after_func"},
@@ -227,7 +208,7 @@ class TestProfiling(unittest.TestCase):
             _ = kwargs
             _ = fn_result
             hist.store_operation(
-                method=phanos_profiler.tree.current_node.ctx.context,
+                method=curr_node.get().ctx.value,
                 operation="observe",
                 value=4.0,
                 label_values={"place": "after_root"},

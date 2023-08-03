@@ -9,7 +9,7 @@ from abc import abstractmethod
 import imp_prof.messaging
 from imp_prof.messaging.publisher import BlockingPublisher
 
-from phanos import log
+from src.phanos import log
 
 
 class OutputFormatter:

@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import logging
 import unittest
 from io import StringIO
@@ -12,9 +11,9 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 
-from src.phanos import async_profiler
-from phanos.handlers import StreamHandler
-from test import dummy_api
+from src.phanos import profiler
+from src.phanos.handlers import StreamHandler
+from test import dummy_api, common, testing_data
 from test.dummy_api import app
 
 
@@ -33,24 +32,79 @@ logger.addHandler(handler)
 class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        async_profiler.config(job="TEST", logger=logger, request_size_profile=False)
+        profiler.config(job="TEST", logger=logger, response_size_profile=False)
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
     def setUp(self) -> None:
         self.output = StringIO()
         profile_handler = StreamHandler("name", self.output)
-        async_profiler.add_handler(profile_handler)
+        profiler.add_handler(profile_handler)
 
     def tearDown(self) -> None:
         self.output.close()
 
     @classmethod
     def tearDownClass(cls) -> None:
-        async_profiler.delete_handlers()
-        async_profiler.delete_metrics(True, True)
+        profiler.delete_handlers()
+        profiler.delete_metrics(True, True)
 
-    async def test_time_measurement(self):
-        """checks if time profiling works with async"""
+    async def test_await(self):
         async_access = dummy_api.AsyncTest()
-        _ = await async_access.nested()
+        _ = await async_access.await_test()
+        _ = await async_access.await_test()
+
+        self.output.seek(0)
+        methods, values = common.parse_output(self.output.readlines())
+        methods.sort()
+        values.sort()
+        self.assertEqual(methods, testing_data.test_await_out_methods)
+        self.assertEqual(values, testing_data.test_await_out_values)
+
+    async def test_task(self):
+        async_access = dummy_api.AsyncTest()
+        loop = asyncio.get_event_loop()
+        task1 = loop.create_task(async_access.task_test())
+        task2 = loop.create_task(async_access.async_access_short())
+        await asyncio.wait([task1, task2])
+
+        self.output.seek(0)
+        methods, values = common.parse_output(self.output.readlines())
+        methods.sort()
+        values.sort()
+        self.assertEqual(methods, testing_data.test_task_out_methods)
+        self.assertEqual(values, testing_data.test_task_out_values)
+
+    async def test_mix(self):
+        async_access = dummy_api.AsyncTest()
+        await async_access.test_mix()
+        self.output.seek(0)
+        methods, values = common.parse_output(self.output.readlines())
+        methods.sort()
+        values.sort()
+        self.assertEqual(methods, testing_data.test_mix_out_methods)
+        self.assertEqual(values, testing_data.test_mix_out_values)
+
+    async def test_sync_in_async(self):
+        async_access = dummy_api.AsyncTest()
+        loop = asyncio.get_event_loop()
+        task1 = loop.create_task(async_access.sync_in_async())
+        task2 = loop.create_task(async_access.sync_in_async())
+        await asyncio.wait([task1, task2])
+        self.output.seek(0)
+        methods, values = common.parse_output(self.output.readlines())
+        methods.sort()
+        values.sort()
+        self.assertEqual(methods, testing_data.sync_in_async_methods)
+        self.assertEqual(values, testing_data.sync_in_async_values)
+
+    async def test_async_error(self):
+        async_access = dummy_api.AsyncTest()
+        loop = asyncio.get_event_loop()
+        with self.assertRaises(RuntimeError):
+            await loop.create_task(async_access.raise_error())
+        self.output.seek(0)
+        print(self.output.readlines())
+        methods, values = common.parse_output(self.output.readlines())
+        methods.sort()
+        values.sort()

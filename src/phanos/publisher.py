@@ -1,6 +1,9 @@
 """ """
 from __future__ import annotations
 
+# contextvars package is builtin but PyCharm do not recognize it
+# noinspection PyPackageRequirements
+import contextvars
 import inspect
 import logging
 import typing
@@ -15,38 +18,43 @@ from . import log
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
+# context var storing currently processed node (just in async)
+curr_node = contextvars.ContextVar("curr_node", default=MethodTreeNode())
+
 
 class Profiler(log.InstanceLoggerMixin):
-    """Class responsible for sending records to IMP_prof RabbitMQ publish queue"""
-
-    metrics: typing.Dict[str, MetricWrapper]
+    """Class responsible for profiling and handling of measured values"""
 
     tree: ContextTree
 
+    metrics: typing.Dict[str, MetricWrapper]
     time_profile: typing.Optional[TimeProfiler]
     resp_size_profile: typing.Optional[ResponseSize]
 
+    handlers: typing.Dict[str, BaseHandler]
+
+    job: str
+    handle_records: bool
+    error_occurred: bool
+
+    # space for user specific profiling logic
     before_func: typing.Optional[typing.Callable]
     after_func: typing.Optional[typing.Callable]
     before_root_func: typing.Optional[typing.Callable]
     after_root_func: typing.Optional[typing.Callable]
 
-    handlers: typing.Dict[str, BaseHandler]
-    handle_records: bool
-    job: str
-    error_occurred: bool
-
     def __init__(self) -> None:
-        """Initialize ProfilesPublisher
+        """Initialize Profiler
 
-        Initialization just creates new instance!!
-
+        Initialization just creates new instance. Profiler NEEDS TO BE configured.
+        Use Profiler.config() or Profiler.dict_config() to configure it. Profiling won't start otherwise.
         """
 
         self.metrics = {}
         self.handlers = {}
         self.job = ""
         self.error_occurred = False
+        self.handle_records = False
 
         self.resp_size_profile = None
         self.time_profile = None
@@ -55,39 +63,41 @@ class Profiler(log.InstanceLoggerMixin):
         self.after_func = None
         self.before_root_func = None
         self.after_root_func = None
+
         super().__init__(logged_name="phanos")
 
     def config(
         self,
-        logger=None,
+        logger: typing.Optional[log.LoggerLike] = None,
         job: str = "",
         time_profile: bool = True,
-        request_size_profile: bool = True,
+        response_size_profile: bool = True,
         handle_records: bool = True,
     ) -> None:
-        """configure PhanosProfiler
+        """configure profiler instance
         :param time_profile:
         :param job: name of job
         :param logger: logger instance
-        :param request_size_profile: should create instance of request size profiler
+        :param response_size_profile: should create instance of response size profiler
         :param handle_records: should handle recorded records
         """
         self.logger = logger or logging.getLogger(__name__)
         self.job = job
-        if request_size_profile:
-            self.create_response_size_profiler()
-
-        if time_profile:
-            self.create_time_profiler()
-
         self.handle_records = handle_records
 
         self.tree = ContextTree(self.logger)
 
+        if response_size_profile:
+            self.create_response_size_profiler()
+        if time_profile:
+            self.create_time_profiler()
+
+        self.debug("Profiler configured successfully")
+
     def dict_config(self, settings: dict[str, typing.Any]) -> None:
         """
         Configure profiler instance with dictionary config.
-        Set up profiling from config file, instead fo changing code for various environments.
+        Set up profiling from config file, instead of changing code for various environments.
 
         Example:
             ```
@@ -98,14 +108,13 @@ class Profiler(log.InstanceLoggerMixin):
                 "handle_records": True,
                 "handlers": {
                     "stdout_handler": {
-                        "class": "phanos.publisher.StreamHandler",
+                        "class": "phanos.handlers.StreamHandler",
                         "handler_name": "stdout_handler",
                         "output": "ext://sys.stdout",
                     }
                 }
             }
             ```
-
         :param settings: dictionary of desired profiling set up
         """
         from . import config as phanos_config
@@ -129,13 +138,13 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug("Phanos - time profiler created")
 
     def create_response_size_profiler(self) -> None:
-        """create response size profiling metric"""
+        """Create response size profiling metric"""
         self.resp_size_profile = ResponseSize(RESPONSE_SIZE, job=self.job, logger=self.logger)
         self.add_metric(self.resp_size_profile)
         self.debug("Phanos - response size profiler created")
 
     def delete_metric(self, item: str) -> None:
-        """deletes one metric instance
+        """Deletes one metric instance
         :param item: name of the metric instance
         :raises KeyError: if metric does not exist
         """
@@ -152,7 +161,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug(f"metric {item} deleted")
 
     def delete_metrics(self, rm_time_profile: bool = False, rm_resp_size_profile: bool = False) -> None:
-        """deletes all custom metric instances
+        """Deletes all custom metric instances and builtin metrics based on parameters
 
         :param rm_time_profile: should pre created time_profiler be deleted
         :param rm_resp_size_profile: should pre created response_size_profiler be deleted
@@ -162,8 +171,8 @@ class Profiler(log.InstanceLoggerMixin):
             if (name != TIME_PROFILER or rm_time_profile) and (name != RESPONSE_SIZE or rm_resp_size_profile):
                 self.delete_metric(name)
 
-    def clear(self):
-        """clear all records from all metrics and clear method tree"""
+    def clear(self) -> None:
+        """Clear all records from all metrics and clear method tree"""
         for metric in self.metrics.values():
             metric.cleanup()
 
@@ -171,7 +180,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.tree.clear()
 
     def add_metric(self, metric: MetricWrapper) -> None:
-        """adds new metric to profiling
+        """Adds new metric to profiling. If metric.name == existing metric name, existing metric will be overwritten.
 
         :param metric: metric instance
         """
@@ -180,8 +189,19 @@ class Profiler(log.InstanceLoggerMixin):
         self.metrics[metric.name] = metric
         self.debug(f"Metric {metric.name} added to phanos profiler")
 
+    def get_records_count(self) -> int:
+        """Get count of records from all metrics.
+
+        :returns: count of records
+        """
+        count = 0
+        for metric in self.metrics.values():
+            count += len(metric.values)
+
+        return count
+
     def add_handler(self, handler: BaseHandler) -> None:
-        """Add handler to profiler
+        """Add handler to profiler. If handler.name == existing handler name, existing handler will be overwritten.
 
         :param handler: handler instance
         """
@@ -209,8 +229,8 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug("all handlers deleted")
 
     def handle_records_clear(self) -> None:
-        """Pass records to each registered Handler and clear stored records
-        method DO NOT clear MethodContext tree
+        """Pass stored records to each registered Handler and delete stored records.
+        This method DO NOT clear MethodContext tree
         """
         # send records and log em
         for metric in self.metrics.values():
@@ -221,17 +241,16 @@ class Profiler(log.InstanceLoggerMixin):
             metric.cleanup()
 
     def force_handle_records_clear(self) -> None:
-        """Method to force records handling
+        """Pass stored records to each registered Handler and delete stored records.
 
-        forces record handling. As side effect clears all metrics and clears MethodContext tree
+        As side effect clears all metrics and DO CLEAR MethodContext tree
         """
         # send records and log em
         self.debug("Forcing record handling")
         self.handle_records_clear()
-        self.tree.current_node = self.tree.root
         self.tree.clear()
 
-    def profile(self, func: typing.Callable) -> typing.Callable:
+    def profile(self, func: typing.Union[typing.Coroutine, typing.Callable]) -> typing.Callable:
         """
         Decorator specifying which methods should be profiled.
         Default profiler is time profiler which measures execution time of decorated methods
@@ -243,105 +262,38 @@ class Profiler(log.InstanceLoggerMixin):
 
         @wraps(func)
         def sync_inner(*args, **kwargs) -> typing.Any:
-            """sync decorator version"""
-            start_ts = None
+            """sync profiling"""
+            start_ts: typing.Optional[datetime] = None
             if self.handlers and self.handle_records:
-                if self.tree.current_node is self.tree.root:
-                    self.error_occurred = False
-
-                self.tree.current_node = self.tree.current_node.add_child(MethodTreeNode(func, self.logger))
-
-                if self.tree.current_node.parent is self.tree.root:
-                    # users custom metrics operation recording
-                    if callable(self.before_root_func):
-                        self.before_root_func(func, args, kwargs)
-                    # place for phanos metrics if needed
-
-                # users custom metrics operation recording
-                if callable(self.before_func):
-                    self.before_func(func, args, kwargs)
-                # phanos metrics
-                if self.time_profile:
-                    start_ts = datetime.now()
+                start_ts = self.before_function_handling(func, args, kwargs)
             try:
-                result = func(*args, **kwargs)
+                result: typing.Any = func(*args, **kwargs)
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
+                curr_node.set(self.tree.root)
                 self.force_handle_records_clear()
                 self.error_occurred = True
                 raise e
             if self.handlers and self.handle_records:
-                # phanos metrics
-                if self.time_profile and not self.error_occurred:
-                    self.time_profile.store_operation(
-                        method=self.tree.current_node.ctx.context, operation="stop", label_values={}, start=start_ts
-                    )
-                # users custom metrics operation recording
-                if callable(self.after_func):
-                    self.after_func(result, args, kwargs)
-
-                if self.tree.current_node.parent is self.tree.root:
-                    # phanos metrics
-                    if self.resp_size_profile:
-                        self.resp_size_profile.store_operation(
-                            method=self.tree.current_node.ctx.context, operation="rec", value=result, label_values={}
-                        )
-                    # users custom metrics operation recording
-                    if callable(self.after_root_func):
-                        self.after_root_func(result, args, kwargs)
-                    self.handle_records_clear()
-                if self.tree.current_node.parent and not self.error_occurred:
-                    self.tree.current_node = self.tree.current_node.parent
-                    self.tree.current_node.delete_child()
-                elif not self.error_occurred:
-                    self.error(f"{self.profile.__qualname__}: node {self.tree.current_node.ctx!r} have no parent.")
-                    raise ValueError(f"{self.tree.current_node.ctx!r} have no parent")
+                self.after_function_handling(result, start_ts, args, kwargs)
             return result
 
         @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
-            """async decorator version"""
-            current_node = None
-            start_ts = None
+            """async async profiling"""
+            start_ts: typing.Optional[datetime] = None
             if self.handlers and self.handle_records:
-                if not self.tree.root.children:
-                    self.error_occurred = False
-                current_node = MethodTreeNode(func, self.logger)
-                self.tree.current_node = current_node
-
-                await self.tree.find_context_and_insert(current_node)
-
-                self.tree.postorder_print()
-                self.debug("EOT")
-
-                if current_node.parent == self.tree.root:
-                    self._before_root_func(func, args, kwargs)
-                self._before_func(func, args, kwargs)
-                start_ts = datetime.now()
-
+                start_ts = self.before_function_handling(func, args, kwargs)
             try:
-                coro = func(*args, **kwargs)
-                result = await coro
+                result: typing.Any = await func(*args, **kwargs)
             except Exception as e:
                 # in case of exception handle measured records, cleanup and reraise
+                curr_node.set(self.tree.root)
                 self.force_handle_records_clear()
                 self.error_occurred = True
                 raise e
-
             if self.handlers and self.handle_records:
-                self.time_profile.store_operation(
-                    method=str(current_node.ctx),
-                    operation="stop",
-                    label_values={},
-                    start=start_ts,
-                )
-                self._after_func(result, args, kwargs)
-
-                if current_node.parent == self.tree.root:
-                    self._after_root_func(result, args, kwargs)
-                    self.handle_records_clear()
-                if not self.error_occurred:
-                    self.tree.delete_node(current_node)
+                self.after_function_handling(result, start_ts, args, kwargs)
 
             return result
 
@@ -349,39 +301,82 @@ class Profiler(log.InstanceLoggerMixin):
             return async_inner
         return sync_inner
 
-    def _before_root_func(self, func, args, kwargs) -> None:
-        """method executing before root function
+    def before_function_handling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
+        """Method for handling before function profiling chores
 
-        :param func: root function
+        Creates new MethodTreeNode instance and sets it in ContextVar for current_node,
+        makes measurements needed and executes user-defined function if exists
+
+        :param func: profiled function
+        :param args: positional arguments of profiled function
+        :param kwargs: keyword arguments of profiled function
+        :returns: timestamp of function execution start
         """
-        # users custom metrics operation recording
-        if callable(self.before_root_func):
-            self.before_root_func(func, args, kwargs)
-        # place for phanos metrics if needed
 
-    def _after_root_func(self, fn_result, args, kwargs) -> None:
-        """method executing after the root function
+        if str(curr_node.get().ctx) == "":
+            curr_node.set(self.tree.root)
 
+        current_node = curr_node.get().add_child(MethodTreeNode(func, self.logger))
+        curr_node.set(current_node)
 
-        :param fn_result: result of function
-        """
-        # phanos metrics
-        if self.resp_size_profile:
-            self.resp_size_profile.store_operation(
-                method=str(self.tree.current_node.ctx), operation="rec", value=fn_result, label_values={}
-            )
-        # users custom metrics operation recording
-        if callable(self.after_root_func):
-            self.after_root_func(fn_result, args, kwargs)
+        if current_node.parent == self.tree.root:
+            self.error_occurred = False
+            if callable(self.before_root_func):
+                # users custom metrics profiling before root function if method passed
+                self.before_root_func(func, args, kwargs)
+            # place for phanos before root function profiling, if it will be needed
 
-    def _before_func(self, func, args, kwargs) -> None:
-        # users custom metrics operation recording
         if callable(self.before_func):
+            # users custom metrics profiling before each decorated function if method passed
             self.before_func(func, args, kwargs)
-        # phanos metrics
 
-    def _after_func(self, fn_result, args, kwargs) -> None:
-        # phanos metrics
-        # users custom metrics operation recording
+        # phanos before each decorated function profiling
+        start_ts: typing.Optional[datetime] = None
+        if self.time_profile:
+            start_ts = datetime.now()
+
+        return start_ts
+
+    def after_function_handling(self, result, start_ts, args, kwargs) -> None:
+        """Method for handling after function profiling chores
+
+        Deletes current node and sets ContextVar to current_node.parent,
+        makes measurements needed and executes user-defined function if exists and handle measured records
+
+        :param result: result of profiled function
+        :param start_ts: timestamp measured in `self.before_function_handling`
+        :param args: positional arguments of profiled function
+        :param kwargs: keyword arguments of profiled function
+        """
+        current_node = curr_node.get()
+
+        if self.time_profile and not self.error_occurred:
+            # phanos after each decorated function profiling
+            self.time_profile.store_operation(
+                method=current_node.ctx.value, operation="stop", label_values={}, start=start_ts
+            )
+
         if callable(self.after_func):
-            self.after_func(fn_result, args, kwargs)
+            # users custom metrics profiling after every decorated function if method passed
+            self.after_func(result, args, kwargs)
+
+        if current_node.parent is self.tree.root:
+            # phanos after root function profiling
+            if self.resp_size_profile:
+                self.resp_size_profile.store_operation(
+                    method=current_node.ctx.value, operation="rec", value=result, label_values={}
+                )
+            if callable(self.after_root_func):
+                # users custom metrics profiling after root function if method passed
+                self.after_root_func(result, args, kwargs)
+            self.handle_records_clear()
+
+        if not self.error_occurred and self.get_records_count() > 20:
+            self.handle_records_clear()
+
+        if not self.error_occurred and current_node.parent:
+            curr_node.set(current_node.parent)
+            self.tree.find_and_delete_node(current_node)
+        elif not self.error_occurred:
+            self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
+            raise ValueError(f"{current_node.ctx!r} have no parent")

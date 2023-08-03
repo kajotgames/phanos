@@ -6,7 +6,6 @@ import sys
 import typing
 from datetime import datetime as dt
 
-from flask import current_app as app
 from imp_prof import Record
 
 from . import log
@@ -117,25 +116,16 @@ class MetricWrapper(log.InstanceLoggerMixin):
         :param kwargs: will be passed to specific operation of given metric
         :raise ValueError: if operation does not exist for given metric.
         """
-        if self.job == "":
-            try:
-                with app.app_context():
-                    self.job = app.import_name
-            except RuntimeError:
-                pass
-
         if label_values is None:
             label_values = {}
-
         labels_ok = self._check_labels(list(label_values.keys()))
-        if labels_ok:
-            self._label_values.append(label_values)
-        else:
+        if not labels_ok:
             self.error(
                 f"{self.store_operation.__qualname__}: expected labels: {self.label_names}, "
                 f"labels given: {label_values.keys()}"
             )
             raise ValueError("Unknown or missing label")
+        self._label_values.append(label_values)
         if operation is None:
             operation = self.default_operation
         self.method.append(method)
@@ -163,8 +153,9 @@ class MetricWrapper(log.InstanceLoggerMixin):
             self.item.clear()
         self.debug("%s: metric %s cleared", self.cleanup.__qualname__, self.name)
 
-    def set_job(self, job):
-        self.job = job
+    @property
+    def values(self):
+        return self._values
 
 
 class Histogram(MetricWrapper):

@@ -186,3 +186,45 @@ methods_between_out = [
     "dummy_api:test_list_comp.test_inside_list_comp",
     "DummyResource:get_.third_access.second_access.first_access",
 ]
+
+test_await_out_methods = [
+    "AsyncTest:await_test",
+    "AsyncTest:await_test",
+    "AsyncTest:await_test.async_access_long",
+    "AsyncTest:await_test.async_access_long",
+    "AsyncTest:await_test.async_access_short",
+    "AsyncTest:await_test.async_access_short",
+]
+test_await_out_values = [2.0, 2.0, 3.0, 3.0, 5.0, 5.0]
+
+test_task_out_methods = [
+    "AsyncTest:async_access_short",
+    "AsyncTest:task_test",
+    "AsyncTest:task_test.async_access_long",
+    "AsyncTest:task_test.task_nested",
+    "AsyncTest:task_test.task_nested.async_access_short",
+]
+test_task_out_values = [2.0, 3.0, 3.0, 3.0, 3.0]
+
+test_mix_out_methods = [
+    "AsyncTest:test_mix",
+    "AsyncTest:test_mix.task_test",
+    "AsyncTest:test_mix.task_test",
+    "AsyncTest:test_mix.task_test.async_access_long",
+    "AsyncTest:test_mix.task_test.async_access_long",
+    "AsyncTest:test_mix.task_test.task_nested",
+    "AsyncTest:test_mix.task_test.task_nested",
+    "AsyncTest:test_mix.task_test.task_nested.async_access_short",
+    "AsyncTest:test_mix.task_test.task_nested.async_access_short",
+]
+
+test_mix_out_values = [2.0, 2.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 6.0]
+
+
+sync_in_async_methods = [
+    "AsyncTest:sync_in_async",
+    "AsyncTest:sync_in_async",
+    "AsyncTest:sync_in_async.sync_access_long",
+    "AsyncTest:sync_in_async.sync_access_long",
+]
+sync_in_async_values = [2.0, 2.0, 2.0, 2.0]
