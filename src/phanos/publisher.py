@@ -197,6 +197,41 @@ class LoggerHandler(BaseHandler):
             self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
 
 
+class NamedLoggerHandler(BaseHandler):
+    """Logger handler initialised with name of logger rather than passing object"""
+
+    logger: log.LoggerLike
+    formatter: OutputFormatter
+    level: int
+
+    def __init__(
+        self,
+        handler_name: str,
+        logger_name: str,
+        level: int = logging.DEBUG,
+    ) -> None:
+        """
+        Initialise handler and find logger by name.
+
+        :param handler_name: name of handler. used for managing handlers
+        :param logger_name: find this logger `logging.getLogger(logger_name)`
+        :param level: level of logger in which prints records. default is DEBUG
+        """
+        super().__init__(handler_name)
+        self.logger = logging.getLogger(logger_name)
+        self.level = level
+        self.formatter = OutputFormatter()
+
+    def handle(self, records: typing.List[types.Record], profiler_name: str = "profiler") -> None:
+        """logs list of records
+
+        :param profiler_name: name of profiler
+        :param records: list of records
+        """
+        for record in records:
+            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+
+
 class StreamHandler(BaseHandler):
     """Stream handler of Records."""
 

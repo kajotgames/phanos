@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+
+### Added
+
+- `phanos.publisher.NamedLoggerHandler` designed to be used of configuration `profile.dict_config`
+
 ### Changed
 
 - limit `requirements` to minimum and separate development ones into `requirements-dev.txt`
