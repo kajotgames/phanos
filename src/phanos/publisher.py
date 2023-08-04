@@ -305,6 +305,7 @@ class PhanosProfiler(log.InstanceLoggerMixin):
         self.after_func = None
         self.before_root_func = None
         self.after_root_func = None
+
         super().__init__(logged_name="phanos")
 
     def config(
@@ -361,6 +362,8 @@ class PhanosProfiler(log.InstanceLoggerMixin):
 
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
+        else:
+            self.logger = logging.getLogger(__name__)
         if "job" in settings:
             self.job = settings["job"]
         if settings.get("time_profile"):
@@ -370,6 +373,9 @@ class PhanosProfiler(log.InstanceLoggerMixin):
             named_handlers = phanos_config.create_handlers(settings["handlers"])
             for handler in named_handlers.values():
                 self.add_handler(handler)
+
+        self._root = MethodTreeNode(None, self.logger)
+        self.current_node = self._root
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""
