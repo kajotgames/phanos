@@ -1,6 +1,8 @@
 # PHANOS
 
 Python client to gather data for Prometheus logging in server with multiple instances and workers.
+Phanos works with synchronous programs and with asynchronous programs implemented by asyncio.
+Behavior in multithread programs is unspecified.
 
 ## Profiling
 
@@ -14,17 +16,20 @@ made automatically.
 
 ### Configuration
 
+There are two ways of profiler configuration
+
+#### Dict Configuration
 It is possible to configure profile with configration dictionary with method `PhanosProfiler.dict_config(settings)` _(similar to `logging` `dictConfig`)_. 
 Attributes are:
 
-- `job`_(optional)_ job _label_ for prometheus; usually name of app
+- `job` job _label_ for prometheus; usually name of app
 - `logger` _(optional)_ name of logger
 - `time_profile` _(optional)_ by default _profiler_ tracks execution time of profiled function/object
-- `handle_records` _(optional)_ should handle recorded records #TODO @miroslav.bulicka descrive better
-- `handlers` _(optional)_ serialized named handlers to publish profiled records
+- `handle_records` _(optional)_ by default _profiler_ measures values and handles them; if False then no profiling is made or handled
+- `handlers` _(optional)_ serialized named handlers to publish profiled records; if no handlers specified then no measurements are made; for handlers description refer to [Handlers](#handlers).
   - `class` class handler to initialized
   - `handler_name` handler name required argument of publishers
-  - `**other argumend` - specific arguments required to construct instance of class f.e.: `output`
+  - `**other arguments` - specific arguments required to construct instance of class f.e.: `output`.
 
 Example of configuration dict:
 
@@ -44,12 +49,34 @@ settings = {
 }
 ```
 
+#### In code configuration
+    
+When configuring in code use `config` method and `add_handler` as shown below. Arguments are same as
+in dict configuration.
+
+```python      
+    import phanos
+    from phanos.publisher import LoggerHandler, ImpProfHandler
+    # some code
+    class SomeApp(Flask):
+        """some code""" 
+        phanos.profiler.config(logger, time_profile, resp_size_profile, handle_records)
+        log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
+        phanos.profiler.addHandler(log_handler)    
+        # some code
+```
+
+In `config` method you can select if you want to turn off  time profiling, response size profiling
+ or records handling. Default is turned on.
+After root method is executed all measured records are handled by all handlers added to
+`phanos.profiler`
 
 ### Usage
 
-1. decorate methods from which you want to send metrics `@phanos.profile` shortcut for `@phanos.profiler.profile`
+1. decorate methods from which you want to send metrics `@phanos.profile` shortcut for `@phanos.profiler.profile`.
+Allways put decorator right above method definition (because of @classmethod, @staticmethod and flask_restx decorators).
 
-    ```python
+```python
     import phanos
    
     # some code
@@ -61,26 +88,9 @@ settings = {
     @phanos.profiler.profile
     def some_method():
         # some code
-    ```
+```
 
-2. Instantiate handlers you need for measured records at app construction.
-
-    ```python      
-    import phanos
-    from phanos.publisher import LoggerHandler, ImpProfHandler
-    # some code
-    class SomeApp(Flask):
-      """some code""" 
-    phanos.profiler.config(logger, should_time_profile, should_resp_size_profile, should_handle_records)
-    log_handler = LoggerHandler('logger_name', logger_instance, logging_level)
-    phanos.profiler.addHandler(log_handler)    
-    # some code
-    ```
-   
-In `config` method you can select if you want to turn off  time profiling, response size profiling
- or records handling. Default is turned on.
-After root method is executed all measured records are handled by all handlers added to
-`phanos.profiler`
+2. Configure profiler as shown in [Configuration](#configuration)
 
 ## Handlers
 
@@ -89,9 +99,10 @@ with `phanos.profiler.deleteHandler(handler_name)`.
 
 Records can be handled by these handlers:
  - `StreamHandler(handler_name, output)` - write records to given output (default is sys.stdout)
- - `LoggerHandler(handler_name, logger, level)` - logs string representation of records with given logger and with given level
-(default level is `logging.DEBUG`) 
- - `ImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue of IMP_prof
+ - `LoggerHandler(handler_name, logger, level)` - logs string representation of records with given logger and with given level.
+Default level is `logging.DEBUG`. If no logger is passed, Phanos creates its own logger. 
+ - `NamedLoggerHandler(handler_name, logger_name, level)` - Same as LoggerHandler, but logger is found by its logger name
+ - `ImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue of IMP_prof.
 
 ## Phanos metrics:
 
@@ -136,11 +147,11 @@ Implement these methods with all your measurement. Example:
 ```python
 import phanos
 
-def before_function(*args, func=None, **kwargs):
+def before_function(func, args, kwargs):
     # this operation will be recorded
     my_metric.store_operation(
         operation="my_operation",
-        method=phanos.profiler.current_node.context,
+        method=str(phanos.publisher.curr_node.get().ctx),
         value=measured_value,
         label_values={"label_name": "label_value"},
     )
@@ -158,10 +169,8 @@ What must/can be done:
 
 - 'before_' functions must have 'func' parameter passed as kwarg where function which is executed is passed.
 'after_' function needs to have 'fn_result' parameter where function result is passed
-- all four functions can access `*args` and `**kwargs` of decorated methods.
-- Each 'store_operation' must have parameter `method=phanos.profiler.current_node.context` so 
+- all four functions can access `args` and `kwargs` of decorated methods. These arguments are passed
+in packed form.
+- Each 'store_operation' must have parameter `method=str(phanos.publisher.curr_node.get().ctx)` so 
 method context is correctly saved. 
-- current_node.context stores context of method calling in format: 
-`"root_class.__name__:root_method.__name__.currently_executed.__name__"` if root is function then instead of 
-class name its module name.
 
