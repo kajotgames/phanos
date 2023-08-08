@@ -5,13 +5,15 @@ from io import StringIO
 from os.path import join, dirname, abspath
 from unittest.mock import patch, MagicMock
 
+import phanos
+
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
 from src.phanos import phanos_profiler
-from src.phanos.handlers import BaseHandler, StreamHandler, LoggerHandler, ImpProfHandler
+from src.phanos.handlers import BaseHandler, StreamHandler, LoggerHandler, ImpProfHandler, NamedLoggerHandler
 from test import testing_data
 
 
@@ -63,6 +65,14 @@ class TestHandlers(unittest.TestCase):
         result = output.read()
         self.assertEqual(result, testing_data.test_handler_out)
         sys.stdout = tmp
+
+    def test_named_log_handler(self):
+        log_handler = NamedLoggerHandler("log_handler", "logger_name")
+        phanos.profiler.add_handler(log_handler)
+        self.assertIn("log_handler", phanos.profiler.handlers)
+        self.assertIs(log_handler, phanos.profiler.handlers["log_handler"])
+        self.assertEqual(phanos.profiler.handlers["log_handler"].logger.name, "logger_name")
+        phanos.profiler.delete_handler("log_handler")
 
     def test_handlers_management(self):
         length = len(phanos_profiler.handlers)
