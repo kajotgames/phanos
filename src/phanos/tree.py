@@ -4,6 +4,7 @@ from __future__ import annotations
 import inspect
 import logging
 import typing
+import weakref
 
 from . import log
 from .log import LoggerLike
@@ -98,16 +99,18 @@ class ContextTree(log.InstanceLoggerMixin):
 
         :param node: node which should be deleted
         """
-        if node.parent:
-            node.parent.children.remove(node)
-            node.parent.children.extend(node.children)
-        for child_to_move in node.children:
-            child_to_move.parent = node.parent
-        node.children = []
-        node.parent = None
-        self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
-        del node
-        return
+        try:
+            if node.parent is not None and node.parent():
+                node.parent().children.remove(node)
+                node.parent().children.extend(node.children)
+            for child_to_move in node.children:
+                child_to_move.parent = node.parent
+            node.children = []
+            node.parent = None
+            self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
+            del node
+        except ValueError:
+            pass
 
     def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> None:
         """Deletes one node from ContextTree. if param `root` is passed, tree will be searched from this node
@@ -118,11 +121,14 @@ class ContextTree(log.InstanceLoggerMixin):
         """
         if root is None:
             root = self.root
-        for child in root.children:
-            if child is not node:
-                self.find_and_delete_node(node, child)
+
+        if root is node:
             self.delete_node(node)
             return
+
+        for child in root.children:
+            self.find_and_delete_node(node, child)
+
         self.debug(f"{self.find_and_delete_node.__qualname__}: node {node.ctx!r} was not found")
 
     def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
@@ -143,7 +149,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     Class representing one node of ContextTree
     """
 
-    parent: typing.Optional[MethodTreeNode]
+    parent: typing.Optional[weakref.ReferenceType[MethodTreeNode]]
     children: typing.List[MethodTreeNode]
     ctx: Context
 
@@ -171,7 +177,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         :param child: child to be inserted
         :returns: child parameter
         """
-        child.parent = self
+        child.parent = weakref.ref(self)
         if self.ctx.method is None:  # equivalent of 'self.context != ""' -> i am root
             child.ctx.prepend_method_class()
         else:

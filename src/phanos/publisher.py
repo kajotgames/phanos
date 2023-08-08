@@ -18,8 +18,8 @@ from . import log
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
-# context var storing currently processed node (just in async)
-curr_node = contextvars.ContextVar("curr_node", default=MethodTreeNode())
+# context var storing currently processed node. Is not part of MethodTree because of async
+curr_node = contextvars.ContextVar("curr_node")
 
 
 class Profiler(log.InstanceLoggerMixin):
@@ -35,7 +35,6 @@ class Profiler(log.InstanceLoggerMixin):
 
     job: str
     handle_records: bool
-    error_occurred: bool
 
     # space for user specific profiling logic
     before_func: typing.Optional[typing.Callable]
@@ -53,7 +52,6 @@ class Profiler(log.InstanceLoggerMixin):
         self.metrics = {}
         self.handlers = {}
         self.job = ""
-        self.error_occurred = False
         self.handle_records = False
 
         self.resp_size_profile = None
@@ -268,11 +266,10 @@ class Profiler(log.InstanceLoggerMixin):
                 start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = func(*args, **kwargs)
-            except Exception as e:
+            except BaseException as e:
                 # in case of exception handle measured records, cleanup and reraise
-                curr_node.set(self.tree.root)
-                self.force_handle_records_clear()
-                self.error_occurred = True
+                if self.handlers and self.handle_records:
+                    self.after_function_handling(None, start_ts, args, kwargs)
                 raise e
             if self.handlers and self.handle_records:
                 self.after_function_handling(result, start_ts, args, kwargs)
@@ -286,15 +283,12 @@ class Profiler(log.InstanceLoggerMixin):
                 start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = await func(*args, **kwargs)
-            except Exception as e:
-                # in case of exception handle measured records, cleanup and reraise
-                curr_node.set(self.tree.root)
-                self.force_handle_records_clear()
-                self.error_occurred = True
+            except BaseException as e:
+                if self.handlers and self.handle_records:
+                    self.after_function_handling(None, start_ts, args, kwargs)
                 raise e
             if self.handlers and self.handle_records:
                 self.after_function_handling(result, start_ts, args, kwargs)
-
             return result
 
         if inspect.iscoroutinefunction(func):
@@ -313,14 +307,16 @@ class Profiler(log.InstanceLoggerMixin):
         :returns: timestamp of function execution start
         """
 
-        if str(curr_node.get().ctx) == "":
+        try:
+            current_node = curr_node.get()
+        except LookupError:
             curr_node.set(self.tree.root)
+            current_node = self.tree.root
 
-        current_node = curr_node.get().add_child(MethodTreeNode(func, self.logger))
+        current_node = current_node.add_child(MethodTreeNode(func, self.logger))
         curr_node.set(current_node)
 
-        if current_node.parent == self.tree.root:
-            self.error_occurred = False
+        if current_node.parent() == self.tree.root:
             if callable(self.before_root_func):
                 # users custom metrics profiling before root function if method passed
                 self.before_root_func(func, args, kwargs)
@@ -350,7 +346,7 @@ class Profiler(log.InstanceLoggerMixin):
         """
         current_node = curr_node.get()
 
-        if self.time_profile and not self.error_occurred:
+        if self.time_profile:
             # phanos after each decorated function profiling
             self.time_profile.store_operation(
                 method=current_node.ctx.value, operation="stop", label_values={}, start=start_ts
@@ -360,7 +356,7 @@ class Profiler(log.InstanceLoggerMixin):
             # users custom metrics profiling after every decorated function if method passed
             self.after_func(result, args, kwargs)
 
-        if current_node.parent is self.tree.root:
+        if current_node.parent() is self.tree.root:
             # phanos after root function profiling
             if self.resp_size_profile:
                 self.resp_size_profile.store_operation(
@@ -371,12 +367,13 @@ class Profiler(log.InstanceLoggerMixin):
                 self.after_root_func(result, args, kwargs)
             self.handle_records_clear()
 
-        if not self.error_occurred and self.get_records_count() > 20:
+        if self.get_records_count() >= 20:
             self.handle_records_clear()
 
-        if not self.error_occurred and current_node.parent:
-            curr_node.set(current_node.parent)
+        if current_node.parent is not None:
+            curr_node.set(current_node.parent())
             self.tree.find_and_delete_node(current_node)
-        elif not self.error_occurred:
+            # self.tree.find_and_delete_node(current_node, current_node)
+        else:
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")
