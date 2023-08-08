@@ -6,9 +6,8 @@ import sys
 import typing
 from datetime import datetime as dt
 
-from imp_prof import Record
-
 from . import log
+from .types import Record, LoggerLike
 
 
 class MetricWrapper(log.InstanceLoggerMixin):
@@ -28,10 +27,10 @@ class MetricWrapper(log.InstanceLoggerMixin):
     def __init__(
         self,
         name: str,
-        units: str,
         job: str,
+        units: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Metric and stores it into publisher instance
@@ -166,10 +165,10 @@ class Histogram(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         units: str,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Histogram metric and stores it into publisher instance
@@ -179,7 +178,7 @@ class Histogram(MetricWrapper):
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "histogram"
         self.default_operation = "observe"
         self.operations = {"observe": self._observe}
@@ -206,10 +205,10 @@ class Summary(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         units: str,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Summary metric and stores it into publisher instance
@@ -219,7 +218,7 @@ class Summary(MetricWrapper):
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "summary"
         self.default_operation = "observe"
         self.operations = {"observe": self._observe}
@@ -246,10 +245,10 @@ class Counter(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         units: str,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Counter metric and stores it into publisher instance
@@ -259,7 +258,7 @@ class Counter(MetricWrapper):
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "counter"
         self.default_operation = "inc"
         self.operations = {"inc": self._inc}
@@ -286,10 +285,10 @@ class Info(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         units: typing.Optional[str] = None,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Info metric and stores it into publisher instance
@@ -301,7 +300,7 @@ class Info(MetricWrapper):
         """
         if units is None:
             units = "info"
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "info"
         self.default_operation = "info"
         self.operations = {"info": self._info}
@@ -328,10 +327,10 @@ class Gauge(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         units: str,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Gauge metric and stores it into publisher instance
@@ -341,7 +340,7 @@ class Gauge(MetricWrapper):
         :param units: units of measurement
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "gauge"
         self.default_operation = "inc"
         self.operations = {
@@ -399,11 +398,11 @@ class Enum(MetricWrapper):
     def __init__(
         self,
         name: str,
+        job: str,
         states: typing.List[str],
         units: typing.Optional[str] = None,
-        job: str = "",
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         Initialize Enum metric and stores it into publisher instance
@@ -416,7 +415,7 @@ class Enum(MetricWrapper):
         """
         if units is None:
             units = "enum"
-        super().__init__(name, units, job, labels, logger)
+        super().__init__(name, job, units, labels, logger)
         self.metric = "enum"
         self.default_operation = "state"
         self.states = states
@@ -449,15 +448,15 @@ class TimeProfiler(Histogram):
     def __init__(
         self,
         name: str,
-        job: str = "",
+        job: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
         :raises RuntimeError: if start timestamps < number of stop measurement operation
         """
-        super().__init__(name, "mS", job, labels, logger)
+        super().__init__(name, job, "mS", labels, logger)
         self.operations = {"stop": self._stop}
         self.default_operation = "stop"
         self.debug("TimeProfiler metric initialized")
@@ -482,14 +481,14 @@ class ResponseSize(Histogram):
     def __init__(
         self,
         name: str,
-        job: str = "",
+        job: str,
         labels: typing.Optional[typing.List[str]] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
         """
-        super().__init__(name, "B", job, labels, logger)
+        super().__init__(name, job, "B", labels, logger)
         self.operations = {"rec": self._rec}
         self.default_operation = "rec"
         self.debug("ResponseSize metric initialized")

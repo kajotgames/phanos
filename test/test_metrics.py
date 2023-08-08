@@ -29,8 +29,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             hist_no_lbl = Histogram(
                 "hist_no_lbl",
-                "V",
                 "TEST",
+                "V",
             )
             # invalid label
             self.assertRaises(
@@ -62,7 +62,7 @@ class TestMetrics(unittest.TestCase):
             hist_no_lbl.store_operation("test:method", operation="observe", value=2.0),
             self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
-            hist_w_lbl = Histogram("hist_w_lbl", "V", "TEST", labels=["test"])
+            hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
 
             # missing label
             self.assertRaises(
@@ -79,7 +79,7 @@ class TestMetrics(unittest.TestCase):
 
     def test_summary(self):
         with app.test_request_context():
-            sum_no_lbl = Summary("sum_no_lbl", "V", job="TEST")
+            sum_no_lbl = Summary("sum_no_lbl", "TEST", "V")
             # invalid label
             self.assertRaises(
                 ValueError,
@@ -114,8 +114,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             cnt_no_lbl = Counter(
                 "cnt_no_lbl",
-                "V",
                 "TEST",
+                "V",
             )
             # invalid label
             self.assertRaises(
@@ -160,7 +160,7 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             inf_no_lbl = Info(
                 "inf_no_lbl",
-                job="TEST",
+                "TEST",
             )
             # invalid value type
             self.assertRaises(
@@ -187,8 +187,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             gauge_no_lbl = Gauge(
                 "gauge_no_lbl",
-                "V",
                 "TEST",
+                "V",
             )
             # invalid label
             self.assertRaises(
@@ -250,8 +250,8 @@ class TestMetrics(unittest.TestCase):
         with app.test_request_context():
             enum_no_lbl = Enum(
                 "enum_no_lbl",
+                "TEST",
                 ["true", "false"],
-                job="TEST",
             )
             # invalid value
             self.assertRaises(
@@ -277,7 +277,3 @@ class TestMetrics(unittest.TestCase):
             enum_no_lbl.store_operation("test:method", operation="state", value="true")
             enum_no_lbl._values.pop(0)
             self.assertRaises(RuntimeError, enum_no_lbl.to_records)
-
-    def test_builtin_profilers(self):
-        # TODO: test time profiling
-        pass

@@ -1,19 +1,25 @@
 import copy
 import importlib
 import typing
+
 from . import (
     publisher,
 )
 
 """
 example_config = {
+    "job": "my_app", 
+    "logger": "my_app_debug_logger", 
+    "time_profile": True, 
+    "response_size_profile": False,
+    "handle_records": True, 
     "handlers": {
-        "stdout_handler": {
-            "class": "phanos.handlers.StreamHandler",
-            "handler_name": "stdout_handler",
-            "output": "ext://sys.stdout",
+        "stdout_handler_ref": {
+                "class": "phanos.handlers.StreamHandler", 
+                "handler_name": "stdout_handler", 
+                "output": "ext://sys.stdout"
+            }
         }
-    },
 }
 """
 
@@ -71,7 +77,7 @@ def create_handlers(configs: dict) -> typing.Dict[str, publisher.BaseHandler]:
             ```
             conf = {
                 "stdout_handler": {
-                    "class": "phanos.publisher.StreamHandler",
+                    "class": "phanos.handlers.StreamHandler",
                     "handler_name": "stdout_handler",
                     "output": "ext://sys.stdout",
                 }

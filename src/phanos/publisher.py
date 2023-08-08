@@ -10,10 +10,12 @@ import typing
 from datetime import datetime
 from functools import wraps
 
-from .handlers import BaseHandler
-from .metrics import MetricWrapper, ResponseSize, TimeProfiler
-from .tree import MethodTreeNode, ContextTree
 from . import log
+from .handlers import BaseHandler
+from .tree import ContextTree
+from .metrics import MetricWrapper, TimeProfiler, ResponseSize
+from .tree import MethodTreeNode
+from .types import LoggerLike
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
@@ -66,10 +68,10 @@ class Profiler(log.InstanceLoggerMixin):
 
     def config(
         self,
-        logger: typing.Optional[log.LoggerLike] = None,
-        job: str = "",
+        job: str,
+        logger: typing.Optional[LoggerLike] = None,
         time_profile: bool = True,
-        response_size_profile: bool = True,
+        response_size_profile: bool = False,
         handle_records: bool = True,
     ) -> None:
         """configure profiler instance
@@ -119,15 +121,23 @@ class Profiler(log.InstanceLoggerMixin):
 
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
-        if "job" in settings:
-            self.job = settings["job"]
+        else:
+            self.logger = logging.getLogger(__name__)
+        if "job" not in settings:
+            self.logger.error("Job argument not found in config dictionary")
+            raise KeyError("Job argument not found in config dictionary")
+        self.job = settings["job"]
         if settings.get("time_profile"):
             self.create_time_profiler()
+        if settings.get("response_size_profile"):
+            self.create_response_size_profiler()
         self.handle_records = settings.get("handle_records", True)
         if "handlers" in settings:
             named_handlers = phanos_config.create_handlers(settings["handlers"])
             for handler in named_handlers.values():
                 self.add_handler(handler)
+
+        self.tree = ContextTree(self.logger)
 
     def create_time_profiler(self) -> None:
         """Create time profiling metric"""

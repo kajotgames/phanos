@@ -6,17 +6,16 @@ import threading
 import typing
 from abc import abstractmethod
 
-import imp_prof.messaging
-from imp_prof.messaging.publisher import BlockingPublisher
 
-from phanos import log
+from .messaging import BlockingPublisher, NETWORK_ERRORS
+from .types import Record, LoggerLike
 
 
 class OutputFormatter:
     """class for converting Record type into profiling string"""
 
     @staticmethod
-    def record_to_str(name: str, record: imp_prof.Record) -> str:
+    def record_to_str(name: str, record: Record) -> str:
         """converts Record type into profiling string
 
         :param name: name of profiler
@@ -48,7 +47,7 @@ class BaseHandler:
     @abstractmethod
     def handle(
         self,
-        records: typing.List[imp_prof.Record],
+        records: typing.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """
@@ -64,7 +63,7 @@ class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
     publisher: BlockingPublisher
-    logger: typing.Optional[log.LoggerLike]
+    logger: typing.Optional[LoggerLike]
 
     def __init__(
         self,
@@ -79,7 +78,7 @@ class ImpProfHandler(BaseHandler):
         retry: int = 3,
         exchange_name: str = "profiling",
         exchange_type: str = "fanout",
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
         **kwargs,
     ) -> None:
         """Creates BlockingPublisher instance (connection not established yet),
@@ -125,7 +124,7 @@ class ImpProfHandler(BaseHandler):
         )
         try:
             self.publisher.connect()
-        except imp_prof.messaging.publisher.NETWORK_ERRORS as err:
+        except NETWORK_ERRORS as err:
             self.logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
@@ -134,7 +133,7 @@ class ImpProfHandler(BaseHandler):
 
     def handle(
         self,
-        records: typing.List[imp_prof.Record],
+        records: typing.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Sends list of records to rabitMq queue
@@ -151,14 +150,14 @@ class ImpProfHandler(BaseHandler):
 class LoggerHandler(BaseHandler):
     """logger handler"""
 
-    logger: log.LoggerLike
+    logger: LoggerLike
     formatter: OutputFormatter
     level: int
 
     def __init__(
         self,
         handler_name: str,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
         level: int = 10,
     ) -> None:
         """
@@ -179,7 +178,42 @@ class LoggerHandler(BaseHandler):
         self.level = level
         self.formatter = OutputFormatter()
 
-    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+        """logs list of records
+
+        :param profiler_name: name of profiler
+        :param records: list of records
+        """
+        for record in records:
+            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+
+
+class NamedLoggerHandler(BaseHandler):
+    """Logger handler initialised with name of logger rather than passing object"""
+
+    logger: LoggerLike
+    formatter: OutputFormatter
+    level: int
+
+    def __init__(
+        self,
+        handler_name: str,
+        logger_name: str,
+        level: int = logging.DEBUG,
+    ) -> None:
+        """
+        Initialise handler and find logger by name.
+
+        :param handler_name: name of handler. used for managing handlers
+        :param logger_name: find this logger `logging.getLogger(logger_name)`
+        :param level: level of logger in which prints records. default is DEBUG
+        """
+        super().__init__(handler_name)
+        self.logger = logging.getLogger(logger_name)
+        self.level = level
+        self.formatter = OutputFormatter()
+
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -207,7 +241,7 @@ class StreamHandler(BaseHandler):
         self.formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, records: typing.List[imp_prof.Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler

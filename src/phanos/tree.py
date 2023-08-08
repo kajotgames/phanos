@@ -6,8 +6,9 @@ import logging
 import typing
 import weakref
 
+
 from . import log
-from .log import LoggerLike
+from .types import LoggerLike
 
 
 class Context:
@@ -156,7 +157,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     def __init__(
         self,
         method: typing.Optional[typing.Callable] = None,
-        logger: typing.Optional[log.LoggerLike] = None,
+        logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """Configures logger, initialize `Context`
 

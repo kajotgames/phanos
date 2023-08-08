@@ -89,8 +89,7 @@ class TestHandlers(unittest.TestCase):
         self.assertRaises(RuntimeError, ImpProfHandler, "handle")
 
     def test_rabbit_handler_publish(self):
-        # TODO: fix mock
-        with patch.object(ImpProfHandler, "publisher") as test_publisher:
+        with patch("src.phanos.handlers.BlockingPublisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences

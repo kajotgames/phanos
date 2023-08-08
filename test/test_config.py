@@ -27,6 +27,7 @@ SETTING_DICT = {
     "job": "my_app",
     "logger": "my_app_debug_logger",
     "time_profile": True,
+    "response_size_profile": True,
     "handle_records": True,
     "handlers": HANDLERS_DICT,
 }
@@ -73,3 +74,10 @@ class TestConfig(unittest.TestCase):
             self.assertIsNone(e)
         self.assertIsInstance(_test_profiler.handlers[HANDLER_NAME], phanos.handlers.StreamHandler)
         self.assertIn(HANDLER_NAME, _test_profiler.handlers)
+        self.assertTrue(_test_profiler.resp_size_profile)
+
+    def test_job_missing(self):
+        _test_profiler = phanos.publisher.Profiler()
+        no_job = SETTING_DICT.copy()
+        no_job.pop("job")
+        self.assertRaises(KeyError, _test_profiler.dict_config, no_job)
