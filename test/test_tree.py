@@ -8,7 +8,6 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-import phanos
 from src.phanos import phanos_profiler
 from src.phanos.tree import MethodTreeNode, ContextTree
 from test import dummy_api
@@ -85,7 +84,7 @@ class TestTree(unittest.TestCase):
         phanos_profiler.tree.root.delete_child()
 
     def test_delete_from_tree(self):
-        tree = phanos.tree.ContextTree()
+        tree = ContextTree()
         node3 = MethodTreeNode()
         node3.ctx.context = "POST:x.y"
         tree.root.add_child(node3)

@@ -1,10 +1,9 @@
-import asyncio
+# you can just run `run_tests.py`
+# or `python -m unittest`
+# or for coverage `python -m coverage run -m unittest` then `python -m coverage report`
 import unittest
 import sys
 from os.path import dirname, abspath, join
-from time import sleep
-
-import aiomonitor
 
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
