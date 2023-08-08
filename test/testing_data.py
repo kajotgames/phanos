@@ -182,11 +182,6 @@ custom_profile_out = [
     },
 ]
 
-methods_between_out = [
-    "dummy_api:test_list_comp.test_inside_list_comp",
-    "DummyResource:get_.third_access.second_access.first_access",
-]
-
 test_await_out_methods = [
     "AsyncTest:await_test",
     "AsyncTest:await_test",

@@ -5,7 +5,7 @@ import flask
 from flask import Flask
 from flask_restx import Api, Resource, Namespace
 
-from src.phanos import profile, profile
+from src.phanos import profile
 
 ns = Namespace("dummy")
 
@@ -105,9 +105,25 @@ class AsyncTest:
     @profile
     async def raise_error(self):
         loop = asyncio.get_event_loop()
-        await self.async_access_short()
-        loop.create_task(self.async_access_short())
+        task = loop.create_task(self.async_access_short())
+        await task
         raise RuntimeError()
+
+    @profile
+    async def wo_await(self):
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.async_access_short())
+
+    @profile
+    async def all_task_possibilities(self):
+        loop = asyncio.get_event_loop()
+        await asyncio.gather(self.async_access_short())
+        await asyncio.wait([asyncio.create_task(self.async_access_short())])
+        loop.create_task(self.async_access_short())
+        asyncio.create_task(self.async_access_short())
+        # loop.run_until_complete(self.async_access_short())
+        asyncio.ensure_future(self.async_access_short())
+        await asyncio.sleep(0.4)
 
 
 @profile

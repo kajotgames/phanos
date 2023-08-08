@@ -97,22 +97,21 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.handle_records = True
         _ = self.client.post("http://localhost/api/dummy/one")
         self.output.seek(0)
-        self.assertEqual(self.output.readlines(), [])
+        self.assertEqual(len(self.output.readlines()), 4)
+        self.output.truncate(0)
+        self.output.seek(0)
         # cleanup assertion
         for metric in phanos_profiler.metrics.values():
             self.assertEqual(metric._values, [])
             self.assertEqual(metric._label_values, [])
             self.assertEqual(metric.method, [])
             self.assertEqual(metric.item, [])
-        # error_occurred will be set to false before root function of next profiling
-        self.assertEqual(phanos_profiler.error_occurred, True)
         self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
+        self.assertEqual(curr_node.get().children, [])
 
         # profiling after request, where error_occurred
         _ = self.client.get("http://localhost/api/dummy/one")
-        self.assertEqual(phanos_profiler.error_occurred, False)
         self.output.seek(0)
-
         lines = self.output.readlines()
         time_lines = lines[:-1]
         size_line = lines[-1]
@@ -147,10 +146,11 @@ class TestProfiling(unittest.TestCase):
         access = dummy_api.DummyDbAccess()
         self.output.truncate(0)
         self.output.seek(0)
+
+        # error raised tree and metrics should be raised normally and error should be reraised
         self.assertRaises(RuntimeError, access.raise_access)
         self.output.seek(0)
-        # len 1 cuz DummyDbAccess.first_access finished, but then raise error so raise_access wasn't measured
-        self.assertEqual(len(self.output.readlines()), 1)
+        self.assertEqual(len(self.output.readlines()), 3)
 
         # cleanup assertion
         for metric in phanos_profiler.metrics.values():
@@ -158,6 +158,9 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric._label_values, [])
             self.assertEqual(metric.method, [])
             self.assertEqual(metric.item, [])
+
+        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
+        self.assertEqual(phanos_profiler.tree.root.children, [])
 
     def test_custom_profile_addition(self):
         hist = Histogram("test_name", "TEST", "test_units", ["place"])

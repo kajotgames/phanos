@@ -2,8 +2,8 @@ import typing
 
 
 def parse_output(out: typing.List[str]) -> typing.Tuple[list, list]:
-    values = []
-    methods = []
+    values = list()
+    methods = list()
     for line in out:
         split = line.split(", ")
         methods.append(split[1].split(": ")[1])

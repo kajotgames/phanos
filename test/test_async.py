@@ -32,7 +32,7 @@ logger.addHandler(handler)
 class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        profiler.config(job="TEST", logger=logger, response_size_profile=False)
+        profiler.config(job="TEST", response_size_profile=False)
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -48,6 +48,18 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
     def tearDownClass(cls) -> None:
         profiler.delete_handlers()
         profiler.delete_metrics(True, True)
+
+    async def test_handling_error(self):
+        async_access = dummy_api.AsyncTest()
+        loop = asyncio.get_event_loop()
+        with self.assertRaises(RuntimeError):
+            await asyncio.gather(
+                loop.create_task(async_access.raise_error()),
+            )
+        self.output.seek(0)
+        methods, _ = common.parse_output(self.output.readlines())
+        methods.sort()
+        self.assertEqual(methods, ["AsyncTest:raise_error", "AsyncTest:raise_error.async_access_short"])
 
     async def test_await(self):
         async_access = dummy_api.AsyncTest()
@@ -98,13 +110,28 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(methods, testing_data.sync_in_async_methods)
         self.assertEqual(values, testing_data.sync_in_async_values)
 
-    async def test_async_error(self):
+    async def test_task_wo_await(self):
         async_access = dummy_api.AsyncTest()
         loop = asyncio.get_event_loop()
-        with self.assertRaises(RuntimeError):
-            await loop.create_task(async_access.raise_error())
+        loop.create_task(async_access.wo_await())
+        # wait for tasks to finish
+        await asyncio.sleep(0.4)
         self.output.seek(0)
-        print(self.output.readlines())
-        methods, values = common.parse_output(self.output.readlines())
+        methods, _ = common.parse_output(self.output.readlines())
+        #  root method finished before nested task -> just root method in profiling output
+        self.assertEqual(methods[0], "AsyncTest:wo_await")
+        # nested method would be sent with next profiling, but value was measured
+        self.assertEqual(profiler.time_profile.method[0], "AsyncTest:wo_await.async_access_short")
+        # cleanup for next tests
+        profiler.time_profile.cleanup()
+
+    async def test_all_task_creation_possibilities(self):
+        async_access = dummy_api.AsyncTest()
+        await async_access.all_task_possibilities()
+        self.output.seek(0)
+        profiler.time_profile.cleanup()
+        methods, _ = common.parse_output(self.output.readlines())
         methods.sort()
-        values.sort()
+        _ = methods.pop(0)
+        for method in methods:
+            self.assertEqual(method, "AsyncTest:all_task_possibilities.async_access_short")

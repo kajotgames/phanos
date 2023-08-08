@@ -8,6 +8,7 @@ path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
+import phanos
 from src.phanos import phanos_profiler
 from src.phanos.tree import MethodTreeNode, ContextTree
 from test import dummy_api
@@ -33,7 +34,7 @@ class TestTree(unittest.TestCase):
         # classmethod
         first = MethodTreeNode(dummy_api.DummyDbAccess.test_class)
         root.add_child(first)
-        self.assertEqual(first.parent, root)
+        self.assertEqual(first.parent(), root)
         self.assertEqual(root.children, [first])
         self.assertEqual(first.ctx.value, "DummyDbAccess:test_class")
         root.delete_child()
@@ -83,28 +84,26 @@ class TestTree(unittest.TestCase):
         # no children exist but error should not be raised
         phanos_profiler.tree.root.delete_child()
 
-    """
     def test_delete_from_tree(self):
-
         tree = phanos.tree.ContextTree()
-        node1 = MethodTreeNode()
-        node1.ctx.context = "POST:x.y.z"
-        tree.insert(node1)
-        node2 = MethodTreeNode()
-        node2.ctx.context = "POST:x.y.q"
-        tree.insert(node2)
         node3 = MethodTreeNode()
         node3.ctx.context = "POST:x.y"
-        tree.insert(node3)
+        tree.root.add_child(node3)
+        node1 = MethodTreeNode()
+        node1.ctx.context = "POST:x.y.z"
+        node3.add_child(node1)
         node4 = MethodTreeNode()
         node4.ctx.context = "POST:x.y.z"
-        tree.insert(node4)
+        node3.add_child(node4)
+        node2 = MethodTreeNode()
+        node2.ctx.context = "POST:x.y.q"
+        node3.add_child(node2)
 
         tree.delete_node(node3)
         # tree structure
-        self.assertEqual(node1.parent, tree.root)
-        self.assertEqual(node2.parent, tree.root)
-        self.assertEqual(node4.parent, tree.root)
+        self.assertEqual(node1.parent(), tree.root)
+        self.assertEqual(node2.parent(), tree.root)
+        self.assertEqual(node4.parent(), tree.root)
         self.assertEqual(len(tree.root.children), 3)
         self.assertIn(node1, tree.root.children)
         self.assertIn(node2, tree.root.children)
@@ -115,8 +114,8 @@ class TestTree(unittest.TestCase):
         self.assertEqual(node3.parent, None)
 
         tree.delete_node(node1)
-        self.assertEqual(node2.parent, tree.root)
-        self.assertEqual(node4.parent, tree.root)
+        self.assertEqual(node2.parent(), tree.root)
+        self.assertEqual(node4.parent(), tree.root)
         self.assertEqual(len(tree.root.children), 2)
         self.assertIn(node2, tree.root.children)
         self.assertIn(node4, tree.root.children)
@@ -125,36 +124,3 @@ class TestTree(unittest.TestCase):
         tree.delete_node(node4)
 
         self.assertEqual(tree.root.children, [])
-
-    def test_insert_into_tree(self):
-        tree = phanos.tree.ContextTree()
-
-        node1 = MethodTreeNode()
-        node1.ctx.context = "POST:x.y.z"
-        tree.insert(node1)
-        self.assertIn(node1, tree.root.children)
-        self.assertEqual(node1.parent, tree.root)
-
-        node2 = MethodTreeNode()
-        node2.ctx.context = "POST:x.y.q"
-        tree.insert(node2)
-        self.assertIn(node2, tree.root.children)
-        self.assertEqual(node2.parent, tree.root)
-        self.assertEqual(len(tree.root.children), 2)
-
-        node3 = MethodTreeNode()
-        node3.ctx.context = "POST:x.y"
-        tree.insert(node3)
-        self.assertIn(node3, tree.root.children)
-        self.assertEqual(len(tree.root.children), 1)
-        self.assertEqual(node3.parent, tree.root)
-        self.assertEqual(node1.parent, node3)
-        self.assertEqual(node2.parent, node3)
-
-        node4 = MethodTreeNode()
-        node4.ctx.context = "POST:x.y.z"
-        tree.insert(node4)
-        self.assertEqual(node4.parent, node3)
-        self.assertEqual(node4.children, [])
-        self.assertEqual(len(node3.children), 3)
-        """
