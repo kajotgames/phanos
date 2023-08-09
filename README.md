@@ -122,8 +122,8 @@ level; default level is `logging.DEBUG`; if no logger is passed, Phanos creates 
  - Gauge
  - Enum
 
-These classes represent basic Prometheus metrics types. For more information about Prometheus metric types 
-refer to [Prometheus documentation](https://prometheus.io/docs/concepts/metric_types/).
+These classes represent basic Prometheus metrics types. For more information about Prometheus metric types, mainly
+allowed operations, refer to [Prometheus documentation](https://prometheus.io/docs/concepts/metric_types/).
 
 
 ### Custom metrics
@@ -160,6 +160,7 @@ Implement these methods with all needed measurement.
 ```python
 import phanos
 
+
 # custom metric example
 class CustomMetric(phanos.metrics.Counter):
   def __init__(self, name, job, units, labels):
@@ -170,29 +171,34 @@ class CustomMetric(phanos.metrics.Counter):
     self.operations = {
       "custom_op": self._custom_op
     }
-      
+
   def _custom_op(self, value: int = 0):
     self.count += value
-      
+    # Counter class method
+    self._inc(self.count)
+
   def helper_method(self):
     pass
-      
+
   def cleanup(self) -> None:
     super().cleanup()
     self.count = 0
-    
+
+
 my_metric = CustomMetric(name="name", job="MyJob", units="units", labels=["label_name"])
 
+
 def before_function(func, args, kwargs):
-    # this operation will be recorded
-    my_metric.store_operation(
-        operation="custom_op",
-        method=str(phanos.publisher.curr_node.get().ctx),
-        value=2,
-        label_values={"label_name": "label_value"},
-    )
-    # this won't be recorded
-    my_metric.helper_method()
+  # this operation will be recorded
+  my_metric.store_metadata(
+    operation="custom_op",
+    method=str(phanos.publisher.curr_node.get().ctx),
+    value=2,
+    label_values={"label_name": "label_value"},
+  )
+  # this won't be recorded
+  my_metric.helper_method()
+
 
 phanos.profiler.before_func = before_function
 ```

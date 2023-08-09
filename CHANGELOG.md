@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `phanos.publisher.NamedLoggerHandler` designed to be used of configuration `profile.dict_config`
 
 ### Changed
-- `job` argument is now mandatory in `config` and `dict_config`, because Flask dependency was removed
+- `request_size_profile` renamed to `response_size_profile` in both `Profiler.config` and `Profiler.dict_config`
+- `PhanosProfiler` class renamed to `Profiler`
+- `job` argument is now positional and mandatory and moved to second position in `Profiler.config` and 
+`Profiler.dict_config`, because Flask dependency was removed
 - handlers moved from `phanos.publisher` to `phanos.handlers`
 - `current_node` of `ContextTree` moved into `Contextvar` due to asyncio support
 - limit `requirements` to minimum and separate development ones into `requirements-dev.txt`

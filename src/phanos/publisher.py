@@ -121,8 +121,6 @@ class Profiler(log.InstanceLoggerMixin):
 
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
-        else:
-            self.logger = logging.getLogger(__name__)
         if "job" not in settings:
             self.logger.error("Job argument not found in config dictionary")
             raise KeyError("Job argument not found in config dictionary")
@@ -382,8 +380,10 @@ class Profiler(log.InstanceLoggerMixin):
 
         if current_node.parent is not None:
             curr_node.set(current_node.parent())
-            self.tree.find_and_delete_node(current_node)
-            # self.tree.find_and_delete_node(current_node, current_node)
+            found = self.tree.find_and_delete_node(current_node)
+            if not found:
+                self.debug(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
+
         else:
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")

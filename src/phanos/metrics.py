@@ -137,6 +137,12 @@ class MetricWrapper(log.InstanceLoggerMixin):
                 f"Known operations: {self.operations.keys()}"
             )
             raise ValueError("Unknown operation") from exc
+
+        if not len(self.method) == len(self._values):
+            self.method.pop(-1)
+            self._label_values.pop(-1)
+            raise ValueError("No operation stored")
+
         if self._values:
             self.debug("%r stored value %s", self.name, self._values[-1])
 

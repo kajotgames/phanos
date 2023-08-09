@@ -113,7 +113,7 @@ class ContextTree(log.InstanceLoggerMixin):
         except ValueError:
             pass
 
-    def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> None:
+    def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> bool:
         """Deletes one node from ContextTree. if param `root` is passed, tree will be searched from this node
         else search begin from `self.root`.
 
@@ -125,12 +125,10 @@ class ContextTree(log.InstanceLoggerMixin):
 
         if root is node:
             self.delete_node(node)
-            return
+            return True
 
         for child in root.children:
-            self.find_and_delete_node(node, child)
-
-        self.debug(f"{self.find_and_delete_node.__qualname__}: node {node.ctx!r} was not found")
+            return self.find_and_delete_node(node, child)
 
     def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
         """Deletes whole subtree starting from param root. If param root is not passed, `self.root` is used
@@ -184,7 +182,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         else:
             child.ctx.value = self.ctx.value + "." + child.ctx.value
         self.children.append(child)
-        self.debug(f"{self.add_child.__qualname__}: node {self.ctx!r} added child: {self.ctx!r}")
+        self.debug(f"{self.add_child.__qualname__}: node {self.ctx!r} added child: {child.ctx!r}")
         return child
 
     def delete_child(self) -> None:
