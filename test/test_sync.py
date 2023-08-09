@@ -10,7 +10,7 @@ if path not in sys.path:
 
 from src.phanos import publisher
 from src.phanos import phanos_profiler
-from src.phanos.handlers import StreamHandler
+from phanos.publisher import StreamHandler
 from test import testing_data, dummy_api
 from test.dummy_api import app, DummyDbAccess
 from src.phanos.metrics import (

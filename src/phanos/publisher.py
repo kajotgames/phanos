@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import inspect
 import logging
+import sys
+import threading
 import typing
+from abc import abstractmethod
 from datetime import datetime
 from functools import wraps
 
 from . import log
-from .handlers import BaseHandler
+from .messaging import BlockingPublisher, NETWORK_ERRORS
 from .tree import ContextTree, curr_node
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
-from .types import LoggerLike
+from .types import LoggerLike, Record
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
@@ -62,17 +65,17 @@ class Profiler(log.InstanceLoggerMixin):
 
     def config(
         self,
-        job: str,
-        logger: typing.Optional[LoggerLike] = None,
+        logger=None,
+        job: str = "",
         time_profile: bool = True,
-        response_size_profile: bool = False,
+        request_size_profile: bool = False,
         handle_records: bool = True,
     ) -> None:
         """configure profiler instance
         :param time_profile:
         :param job: name of job
         :param logger: logger instance
-        :param response_size_profile: should create instance of response size profiler
+        :param request_size_profile: should create instance of response size profiler
         :param handle_records: should handle recorded records
         """
         self.logger = logger or logging.getLogger(__name__)
@@ -81,7 +84,7 @@ class Profiler(log.InstanceLoggerMixin):
 
         self.tree = ContextTree(self.logger)
 
-        if response_size_profile:
+        if request_size_profile:
             self.create_response_size_profiler()
         if time_profile:
             self.create_time_profiler()
@@ -102,7 +105,7 @@ class Profiler(log.InstanceLoggerMixin):
                 "handle_records": True,
                 "handlers": {
                     "stdout_handler": {
-                        "class": "phanos.handlers.StreamHandler",
+                        "class": "phanos.publisher.StreamHandler",
                         "handler_name": "stdout_handler",
                         "output": "ext://sys.stdout",
                     }
@@ -121,7 +124,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.job = settings["job"]
         if settings.get("time_profile"):
             self.create_time_profiler()
-        if settings.get("response_size_profile"):
+        if settings.get("request_size_profile"):
             self.create_response_size_profiler()
         self.handle_records = settings.get("handle_records", True)
         if "handlers" in settings:
@@ -377,3 +380,248 @@ class Profiler(log.InstanceLoggerMixin):
         else:
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")
+
+
+class OutputFormatter:
+    """class for converting Record type into profiling string"""
+
+    @staticmethod
+    def record_to_str(name: str, record: Record) -> str:
+        """converts Record type into profiling string
+
+        :param name: name of profiler
+        :param record: metric record which to convert
+        """
+        value = record["value"][1]
+        if not record.get("labels"):
+            return f"profiler: {name}, " f"method: {record.get('method')}, " f"value: {value} {record.get('units')}"
+        # format labels as this "key=value, key2=value2"
+        labels = ", ".join(f"{k}={v}" for k, v in record["labels"].items())
+        return (
+            f"profiler: {name}, "
+            f"method: {record.get('method')}, "
+            f"value: {value} {record.get('units')}, "
+            f"labels: {labels}"
+        )
+
+
+class BaseHandler:
+    """base class for record handling"""
+
+    handler_name: str
+
+    def __init__(self, handler_name: str) -> None:
+        """
+        :param handler_name: name of handler. used for managing handlers"""
+        self.handler_name = handler_name
+
+    @abstractmethod
+    def handle(
+        self,
+        records: typing.List[Record],
+        profiler_name: str = "profiler",
+    ) -> None:
+        """
+        method for handling records
+
+        :param profiler_name: name of profiler
+        :param records: list of records to handle
+        """
+        raise NotImplementedError
+
+
+class ImpProfHandler(BaseHandler):
+    """RabbitMQ record handler"""
+
+    publisher: BlockingPublisher
+    logger: typing.Optional[LoggerLike]
+
+    def __init__(
+        self,
+        handler_name: str,
+        host: str = "127.0.0.1",
+        port: int = 5672,
+        user: typing.Optional[str] = None,
+        password: typing.Optional[str] = None,
+        heartbeat: int = 47,
+        timeout: float = 23,
+        retry_delay: float = 0.137,
+        retry: int = 3,
+        exchange_name: str = "profiling",
+        exchange_type: str = "fanout",
+        logger: typing.Optional[LoggerLike] = None,
+        **kwargs,
+    ) -> None:
+        """Creates BlockingPublisher instance (connection not established yet),
+         sets logger and create time profiler and response size profiler
+
+        :param handler_name: name of handler. used for managing handlers
+        :param host: rabbitMQ server host
+        :param port: rabbitMQ server port
+        :param user: rabbitMQ login username
+        :param password: rabbitMQ user password
+        :param exchange_name: exchange name to bind queue with
+        :param exchange_type: exchange type to bind queue with
+        :param logger: loging object to use
+        :param retry: how many times to retry publish event
+        :param int|float retry_delay: Time to wait in seconds, before the next
+        :param timeout: If not None,
+            the value is a non-negative timeout, in seconds, for the
+            connection to remain blocked (triggered by Connection.Blocked from
+            broker); if the timeout expires before connection becomes unblocked,
+            the connection will be torn down, triggering the adapter-specific
+            mechanism for informing client app about the closed connection (
+            e.g., on_close_callback or ConnectionClosed exception) with
+            `reason_code` of `InternalCloseReasons.BLOCKED_CONNECTION_TIMEOUT`.
+        :param kwargs: other connection params, like `timeout goes here`
+        :param logger: logger
+        """
+        super().__init__(handler_name)
+
+        self.logger = logger or logging.getLogger(__name__)
+        self.publisher = BlockingPublisher(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            heartbeat=heartbeat,
+            timeout=timeout,
+            retry_delay=retry_delay,
+            retry=retry,
+            exchange_name=exchange_name,
+            exchange_type=exchange_type,
+            logger=logger,
+            **kwargs,
+        )
+        try:
+            self.publisher.connect()
+        except NETWORK_ERRORS as err:
+            self.logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
+            raise RuntimeError("Cannot connect to RabbitMQ") from err
+
+        self.logger.info("ImpProfHandler created successfully")
+        self.publisher.close()
+
+    def handle(
+        self,
+        records: typing.List[Record],
+        profiler_name: str = "profiler",
+    ) -> None:
+        """Sends list of records to rabitMq queue
+
+        :param profiler_name: name of profiler (not used)
+        :param records: list of records to publish
+        """
+
+        _ = profiler_name
+        for record in records:
+            _ = self.publisher.publish(record)
+
+
+class LoggerHandler(BaseHandler):
+    """logger handler"""
+
+    logger: LoggerLike
+    formatter: OutputFormatter
+    level: int
+
+    def __init__(
+        self,
+        handler_name: str,
+        logger: typing.Optional[LoggerLike] = None,
+        level: int = 10,
+    ) -> None:
+        """
+
+        :param handler_name: name of handler. used for managing handlers
+        :param logger: logger instance if none -> creates new with name PHANOS
+        :param level: level of logger in which prints records. default is DEBUG
+        """
+        super().__init__(handler_name)
+        if logger is not None:
+            self.logger = logger
+        else:
+            self.logger = logging.getLogger("PHANOS")
+            self.logger.setLevel(10)
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(10)
+            self.logger.addHandler(handler)
+        self.level = level
+        self.formatter = OutputFormatter()
+
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+        """logs list of records
+
+        :param profiler_name: name of profiler
+        :param records: list of records
+        """
+        for record in records:
+            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+
+
+class NamedLoggerHandler(BaseHandler):
+    """Logger handler initialised with name of logger rather than passing object"""
+
+    logger: LoggerLike
+    formatter: OutputFormatter
+    level: int
+
+    def __init__(
+        self,
+        handler_name: str,
+        logger_name: str,
+        level: int = logging.DEBUG,
+    ) -> None:
+        """
+        Initialise handler and find logger by name.
+
+        :param handler_name: name of handler. used for managing handlers
+        :param logger_name: find this logger `logging.getLogger(logger_name)`
+        :param level: level of logger in which prints records. default is DEBUG
+        """
+        super().__init__(handler_name)
+        self.logger = logging.getLogger(logger_name)
+        self.level = level
+        self.formatter = OutputFormatter()
+
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+        """logs list of records
+
+        :param profiler_name: name of profiler
+        :param records: list of records
+        """
+        for record in records:
+            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+
+
+class StreamHandler(BaseHandler):
+    """Stream handler of Records."""
+
+    formatter: OutputFormatter
+    output: typing.TextIO
+    _lock: threading.Lock
+
+    def __init__(self, handler_name: str, output: typing.TextIO = sys.stdout) -> None:
+        """
+
+        :param handler_name: name of profiler
+        :param output: stream output. Default 'sys.stdout'
+        """
+        super().__init__(handler_name)
+        self.output = output
+        self.formatter = OutputFormatter()
+        self._lock = threading.Lock()
+
+    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+        """logs list of records
+
+        :param profiler_name: name of profiler
+        :param records: list of records
+        """
+        for record in records:
+            with self._lock:
+                print(
+                    self.formatter.record_to_str(profiler_name, record),
+                    file=self.output,
+                    flush=True,
+                )

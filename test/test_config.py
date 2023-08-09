@@ -4,6 +4,8 @@ import sys
 import unittest
 from os.path import join, dirname, abspath
 
+import phanos.publisher
+
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
@@ -17,7 +19,7 @@ HANDLER_NAME = "stdout_handler"
 HANDLER_REFERENCE = "stdout_handler_ref"
 HANDLERS_DICT = {
     HANDLER_REFERENCE: {
-        "class": "src.phanos.handlers.StreamHandler",
+        "class": "src.phanos.publisher.StreamHandler",
         "handler_name": HANDLER_NAME,
         "output": "ext://sys.stdout",
     }
@@ -27,7 +29,7 @@ SETTING_DICT = {
     "job": "my_app",
     "logger": "my_app_debug_logger",
     "time_profile": True,
-    "response_size_profile": True,
+    "request_size_profile": True,
     "handle_records": True,
     "handlers": HANDLERS_DICT,
 }
@@ -63,7 +65,7 @@ class TestConfig(unittest.TestCase):
         parsed = phanos.config.create_handlers(HANDLERS_DICT)
         for key in HANDLERS_DICT:
             self.assertIn(key, parsed)
-        self.assertIsInstance(parsed[HANDLER_REFERENCE], phanos.handlers.StreamHandler)
+        self.assertIsInstance(parsed[HANDLER_REFERENCE], phanos.publisher.StreamHandler)
         self.assertEqual(HANDLER_NAME, parsed[HANDLER_REFERENCE].handler_name)
 
     def test_dict_config(self):
@@ -72,7 +74,7 @@ class TestConfig(unittest.TestCase):
             _test_profiler.dict_config(SETTING_DICT)
         except (KeyError, ValueError, IndexError, Exception) as e:
             self.assertIsNone(e)
-        self.assertIsInstance(_test_profiler.handlers[HANDLER_NAME], phanos.handlers.StreamHandler)
+        self.assertIsInstance(_test_profiler.handlers[HANDLER_NAME], phanos.publisher.StreamHandler)
         self.assertIn(HANDLER_NAME, _test_profiler.handlers)
         self.assertTrue(_test_profiler.resp_size_profile)
 

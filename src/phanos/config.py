@@ -2,6 +2,7 @@ import copy
 import importlib
 import typing
 
+import phanos.publisher
 from . import (
     publisher,
 )
@@ -15,7 +16,7 @@ example_config = {
     "handle_records": True, 
     "handlers": {
         "stdout_handler_ref": {
-                "class": "phanos.handlers.StreamHandler", 
+                "class": "phanos.publisher.StreamHandler", 
                 "handler_name": "stdout_handler", 
                 "output": "ext://sys.stdout"
             }
@@ -68,7 +69,7 @@ def parse_arguments(arguments: dict[str, typing.Any]) -> dict[str, typing.Any]:
     return parsed
 
 
-def create_handlers(configs: dict) -> typing.Dict[str, publisher.BaseHandler]:
+def create_handlers(configs: dict) -> typing.Dict[str, phanos.publisher.BaseHandler]:
     """
     Factory to create handlers based on dict config.
 
@@ -77,7 +78,7 @@ def create_handlers(configs: dict) -> typing.Dict[str, publisher.BaseHandler]:
             ```
             conf = {
                 "stdout_handler": {
-                    "class": "phanos.handlers.StreamHandler",
+                    "class": "phanos.publisher.StreamHandler",
                     "handler_name": "stdout_handler",
                     "output": "ext://sys.stdout",
                 }

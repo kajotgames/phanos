@@ -17,7 +17,7 @@ from test.dummy_api import dummy_func, DummyDbAccess
 class TestTree(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", time_profile=True, response_size_profile=False)
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False)
 
     @classmethod
     def tearDownClass(cls) -> None:

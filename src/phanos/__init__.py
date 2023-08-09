@@ -5,7 +5,6 @@ from . import (
     publisher,
     tree,
     metrics,
-    handlers,
     config,
 )
 from .tree import MethodTreeNode

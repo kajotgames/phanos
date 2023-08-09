@@ -13,14 +13,14 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 from src.phanos import phanos_profiler
-from src.phanos.handlers import BaseHandler, StreamHandler, LoggerHandler, ImpProfHandler, NamedLoggerHandler
+from phanos.publisher import BaseHandler, ImpProfHandler, LoggerHandler, NamedLoggerHandler, StreamHandler
 from test import testing_data
 
 
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", time_profile=True, response_size_profile=True)
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=True)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -99,7 +99,8 @@ class TestHandlers(unittest.TestCase):
         self.assertRaises(RuntimeError, ImpProfHandler, "handle")
 
     def test_rabbit_handler_publish(self):
-        with patch("src.phanos.handlers.BlockingPublisher") as test_publisher:
+        # fix mock
+        with patch("src.phanos.publisher.BlockingPublisher") as test_publisher:
             handler = ImpProfHandler("rabbit")
             test_publisher.assert_called()
             # noinspection PyDunderSlots,PyUnresolvedReferences
