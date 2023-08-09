@@ -16,7 +16,6 @@ from test.dummy_api import app, DummyDbAccess
 from src.phanos.metrics import (
     Histogram,
 )
-from src.phanos.publisher import curr_node
 
 
 class TestProfiling(unittest.TestCase):
@@ -102,12 +101,10 @@ class TestProfiling(unittest.TestCase):
         self.output.seek(0)
         # cleanup assertion
         for metric in phanos_profiler.metrics.values():
-            self.assertEqual(metric._values, [])
-            self.assertEqual(metric._label_values, [])
+            self.assertEqual(metric.values, [])
+            self.assertEqual(metric.label_values, [])
             self.assertEqual(metric.method, [])
             self.assertEqual(metric.item, [])
-        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
-        self.assertEqual(curr_node.get().children, [])
 
         # profiling after request, where error_occurred
         _ = self.client.get("http://localhost/api/dummy/one")
@@ -140,7 +137,6 @@ class TestProfiling(unittest.TestCase):
             testing_data.profiling_out[-1]["method"],
         )
 
-        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
         self.assertEqual(phanos_profiler.tree.root.children, [])
 
         access = dummy_api.DummyDbAccess()
@@ -154,12 +150,11 @@ class TestProfiling(unittest.TestCase):
 
         # cleanup assertion
         for metric in phanos_profiler.metrics.values():
-            self.assertEqual(metric._values, [])
-            self.assertEqual(metric._label_values, [])
+            self.assertEqual(metric.values, [])
+            self.assertEqual(metric.label_values, [])
             self.assertEqual(metric.method, [])
             self.assertEqual(metric.item, [])
 
-        self.assertEqual(curr_node.get(), phanos_profiler.tree.root)
         self.assertEqual(phanos_profiler.tree.root.children, [])
 
     def test_custom_profile_addition(self):
@@ -171,11 +166,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
         def before_root_func(func, args, kwargs):
-            hist.store_operation(
-                method=curr_node.get().ctx.value,
-                operation="observe",
-                value=1.0,
-                label_values={"place": "before_root"},
+            hist.observe(
+                1.0,
+                {"place": "before_root"},
             )
 
         phanos_profiler.before_root_func = before_root_func
@@ -184,11 +177,9 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = func
-            hist.store_operation(
-                method=curr_node.get().ctx.value,
-                operation="observe",
-                value=2.0,
-                label_values={"place": "before_func"},
+            hist.observe(
+                2.0,
+                {"place": "before_func"},
             )
 
         phanos_profiler.before_func = before_func
@@ -197,11 +188,9 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.store_operation(
-                method=curr_node.get().ctx.value,
-                operation="observe",
-                value=3.0,
-                label_values={"place": "after_func"},
+            hist.observe(
+                3.0,
+                {"place": "after_func"},
             )
 
         phanos_profiler.after_func = after_func
@@ -210,11 +199,9 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.store_operation(
-                method=curr_node.get().ctx.value,
-                operation="observe",
-                value=4.0,
-                label_values={"place": "after_root"},
+            hist.observe(
+                4.0,
+                {"place": "after_root"},
             )
 
         phanos_profiler.after_root_func = after_root_func

@@ -48,11 +48,11 @@ test_handler_out_no_lbl = "profiler: test_name, method: DummyResource:get.first_
 
 hist_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "histogram",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("observe", 2.0),
     }
@@ -60,11 +60,11 @@ hist_no_lbl = [
 
 hist_w_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "histogram",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {"test": "test"},
         "value": ("observe", 2.0),
     }
@@ -72,11 +72,11 @@ hist_w_lbl = [
 
 sum_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "summary",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("observe", 2.0),
     }
@@ -84,11 +84,11 @@ sum_no_lbl = [
 
 cnt_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "counter",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("inc", 2.0),
     }
@@ -96,11 +96,11 @@ cnt_no_lbl = [
 
 inf_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "info",
         "units": "info",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("info", {"value": "asd"}),
     }
@@ -108,29 +108,29 @@ inf_no_lbl = [
 
 gauge_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("inc", 2.0),
     },
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("dec", 2.0),
     },
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "gauge",
         "units": "V",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("set", 2.0),
     },
@@ -138,11 +138,11 @@ gauge_no_lbl = [
 
 enum_no_lbl = [
     {
-        "item": "test",
+        "item": "Missing",
         "metric": "enum",
         "units": "enum",
         "job": "TEST",
-        "method": "test:method",
+        "method": "Missing:method",
         "labels": {},
         "value": ("state", "true"),
     }

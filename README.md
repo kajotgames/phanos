@@ -136,11 +136,10 @@ size of endpoints; basically Histogram metric of Prometheus.
 
 ### Creating new custom metric
 
-- New metric class needs to inherit from one of basic Prometheus metrics. 
-- `__init__()`
-  - `__init__()` method needs to call `super().__init__()`
-  - `self.default_operation` and `self.operations` needs to be set
-- Implement method for each operation wanted
+- new metric class needs to inherit from one of basic Prometheus metrics.
+- `__init__()` method needs to call `super().__init__()`
+- implement method for each operation wanted; this method must call one of inherited metrics operations if you want
+operation to be saved f.e. `Gauge.dec`;
 - `MetricWrapper.cleanup()` is called after all measured metrics are handled; if custom cleanup is needed, 
 implement method `cleanup()` calling `super().cleanup()` inside
 
@@ -158,6 +157,8 @@ Implement these methods with all needed measurement.
 ### Complete example
 
 ```python
+import typing
+import phanos.tree
 import phanos
 
 
@@ -167,15 +168,10 @@ class CustomMetric(phanos.metrics.Counter):
     super().__init__(name, job, units, labels)
     # custom initialization
     self.count = 0
-    self.default_operation = "custom_op"
-    self.operations = {
-      "custom_op": self._custom_op
-    }
 
-  def _custom_op(self, value: int = 0):
+  def custom_op(self, value: int = 0, label_values: typing.Optional[typing.Dict[str,str]] = None):
     self.count += value
-    # Counter class method
-    self._inc(self.count)
+    self.inc(self.count, label_values)
 
   def helper_method(self):
     pass
@@ -190,12 +186,7 @@ my_metric = CustomMetric(name="name", job="MyJob", units="units", labels=["label
 
 def before_function(func, args, kwargs):
   # this operation will be recorded
-  my_metric.store_metadata(
-    operation="custom_op",
-    method=str(phanos.publisher.curr_node.get().ctx),
-    value=2,
-    label_values={"label_name": "label_value"},
-  )
+  my_metric.custom_op(2,{"label_name": "label_value"})
   # this won't be recorded
   my_metric.helper_method()
 
@@ -206,13 +197,10 @@ phanos.profiler.before_func = before_function
 What must/can be done:
 - custom metric
   -  `MetricWrapper.__init__` needs `name`, `job`, `units` arguments passed; 
-`labels` and `logger` are optional 
-  - `self.default_operation` and `self.operations` needs to be set
+`labels` and `logger` are optional
 - custom measurements
   - `before_*` functions must have `func` argument, where function which is executed is passed.
 `after_*` function needs to have `fn_result` argument where function result is passed
   - all four functions can access `args` and `kwargs` of decorated methods. These arguments are passed
 in packed form.
-  - each `store_operation` must have argument `method=str(phanos.publisher.curr_node.get().ctx)` so 
-method context is correctly saved
 

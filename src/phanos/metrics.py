@@ -1,13 +1,95 @@
 """ Module with metric types corresponding with Prometheus metrics and custom Time profiling metric """
 from __future__ import annotations
 
+import datetime
 import logging
 import sys
 import typing
 from datetime import datetime as dt
 
 from . import log
+from .tree import curr_node
 from .types import Record, LoggerLike
+
+
+VALUE_TYPES = typing.Union[
+    float,
+    str,
+    dict[str, typing.Any],
+    tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
+]
+OPERATION_TYPE = typing.Callable[["MetricWrapper", VALUE_TYPES, typing.Optional[typing.Dict[str, str]]], None]
+
+
+class StoreOperationDecorator:
+    """Decorator class used for all of Prometheus metrics measurement methods.
+
+    This decorator handles checking of all values that will be inserted into Record and
+    calls one of metrics operation method f.e. `Counter.inc`
+    """
+
+    operation: OPERATION_TYPE
+
+    def __init__(self, operation: OPERATION_TYPE):
+        """
+        :param operation: measurement method of one of basic Prometheus metrics
+        """
+        self.operation = operation
+
+    def __get__(
+        self, instance: MetricWrapper, owner: type[MetricWrapper]
+    ) -> typing.Callable[[VALUE_TYPES, typing.Optional[typing.Dict[str, str]]], None]:
+        """
+
+        :param instance: instance of basic Prometheus metric
+        :param owner: class of basic Prometheus metric
+        :return: wrapper
+        """
+        return lambda value, label_values=None: self.wrapper(instance, value, label_values)
+
+    def wrapper(
+        self,
+        instance: MetricWrapper,
+        value: VALUE_TYPES,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
+        """
+        wrapper check if given labels are same as labels given at initialization of metric,
+        saves label_values, current method, and given operation with value. If any error occurs,
+        record is not saved.
+
+        :param instance:instance of basic Prometheus metric
+        :param value: measured value to be inserted
+        :param label_values: values of labels in format {'label_name': 'label_value'}
+        :raise ValueError: if any of label names are not known or missing, or if `self.operation`method did not
+        store any value.
+
+        """
+        if label_values is None:
+            label_values = {}
+        labels_ok = instance.check_labels(list(label_values.keys()))
+        if not labels_ok:
+            instance.error(
+                f"{self.operation.__qualname__}: expected labels: {instance.label_names}, "
+                f"labels given: {label_values.keys()}"
+            )
+            raise ValueError("Unknown or missing label")
+        instance.label_values.append(label_values)
+        try:
+            instance.method.append(curr_node.get().ctx.value)
+        except LookupError:
+            instance.error(f"{self.operation.__qualname__}: cannot get context from current node")
+            instance.method.append("Missing:method")
+
+        self.operation(instance, value, label_values)
+
+        if not len(instance.method) == len(instance.values):
+            instance.method.pop(-1)
+            instance.label_values.pop(-1)
+            raise ValueError("No operation stored")
+
+        if instance.values:
+            instance.debug("%r stored value %s", instance.name, instance.values[-1])
 
 
 class MetricWrapper(log.InstanceLoggerMixin):
@@ -18,9 +100,9 @@ class MetricWrapper(log.InstanceLoggerMixin):
     method: typing.List[str]
     job: str
     metric: str
-    _values: typing.List[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]
+    values: typing.List[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]
     label_names: typing.List[str]
-    _label_values: typing.List[typing.Dict[str, str]]
+    label_values: typing.List[typing.Dict[str, str]]
     operations: typing.Dict[str, typing.Callable]
     default_operation: str
 
@@ -43,11 +125,11 @@ class MetricWrapper(log.InstanceLoggerMixin):
         self.name = name
         self.item = []
         self.units = units
-        self._values = []
+        self.values = []
         self.method = []
         self.job = job
         self.label_names = list(set(labels)) if labels else []
-        self._label_values = []
+        self.label_values = []
         self.operations = {}
         self.default_operation = ""
         super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
@@ -59,11 +141,11 @@ class MetricWrapper(log.InstanceLoggerMixin):
         :raises RuntimeError: if one of records would be incomplete
         """
         records = []
-        if not len(self.method) == len(self._values) == len(self._label_values):
+        if not len(self.method) == len(self.values) == len(self.label_values):
             self.error(f"{self.to_records.__qualname__}: one of records missing method || value || label_values")
-            raise RuntimeError(f"{len(self.method)}, {len(self._values)}, {len(self._label_values)}")
-        for i in range(len(self._values)):
-            label_value = self._label_values[i] if self._label_values is not None else {}
+            raise RuntimeError(f"{len(self.method)}, {len(self.values)}, {len(self.label_values)}")
+        for i in range(len(self.values)):
+            label_value = self.label_values[i] if self.label_values is not None else {}
             record: Record = {
                 "item": self.method[i].split(":")[0],
                 "metric": self.metric,
@@ -71,14 +153,14 @@ class MetricWrapper(log.InstanceLoggerMixin):
                 "job": self.job,
                 "method": self.method[i],
                 "labels": label_value,
-                "value": self._values[i],
+                "value": self.values[i],
             }
             records.append(record)
 
         return records
 
-    def _check_labels(self, labels: typing.List[str]) -> bool:
-        """Check if labels of records == labels specified at init
+    def check_labels(self, labels: typing.List[str]) -> bool:
+        """Check if labels of records == labels specified at initialization
 
         :param labels: label keys and values of one record
         """
@@ -86,81 +168,21 @@ class MetricWrapper(log.InstanceLoggerMixin):
             return True
         return False
 
-    def store_operation(
-        self,
-        method: str,
-        operation: typing.Optional[str] = None,
-        value: typing.Optional[
-            typing.Union[
-                float,
-                str,
-                dict[str, typing.Any],
-                tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
-            ]
-        ] = None,
-        label_values: typing.Optional[typing.Dict[str, str]] = None,
-        *args,
-        **kwargs,
-    ) -> None:
-        """Stores one record of the given operation
-
-        method common for all metrics. Saves labels_values and call method specified
-        in operation parameter.
-
-        :param operation: string identifying operation
-        :param method: measured method
-        :param value: measured value
-        :param label_values: values of labels
-        :param args: will be passed to specific operation of given metric
-        :param kwargs: will be passed to specific operation of given metric
-        :raise ValueError: if operation does not exist for given metric.
-        """
-        if label_values is None:
-            label_values = {}
-        labels_ok = self._check_labels(list(label_values.keys()))
-        if not labels_ok:
-            self.error(
-                f"{self.store_operation.__qualname__}: expected labels: {self.label_names}, "
-                f"labels given: {label_values.keys()}"
-            )
-            raise ValueError("Unknown or missing label")
-        self._label_values.append(label_values)
-        if operation is None:
-            operation = self.default_operation
-        self.method.append(method)
-
-        try:
-            self.operations[operation](value, *args, **kwargs)
-        except KeyError as exc:
-            self.error(
-                f"{self.store_operation.__qualname__}: operation {operation} unknown."
-                f"Known operations: {self.operations.keys()}"
-            )
-            raise ValueError("Unknown operation") from exc
-
-        if not len(self.method) == len(self._values):
-            self.method.pop(-1)
-            self._label_values.pop(-1)
-            raise ValueError("No operation stored")
-
-        if self._values:
-            self.debug("%r stored value %s", self.name, self._values[-1])
-
     def cleanup(self) -> None:
-        """Cleanup after all records was sent"""
-        if self._values is not None:
-            self._values.clear()
-        if self._label_values is not None:
-            self._label_values.clear()
+        """Cleanup after all records was sent
+
+        Clears metrics `self.values`, `self.label_values`, `self.method` and `self.item`
+        `self.job` and `self.units` are same during whole existence of metric instance
+        """
+        if self.values is not None:
+            self.values.clear()
+        if self.label_values is not None:
+            self.label_values.clear()
         if self.method is not None:
             self.method.clear()
         if self.item is not None:
             self.item.clear()
         self.debug("%s: metric %s cleared", self.cleanup.__qualname__, self.name)
-
-    @property
-    def values(self):
-        return self._values
 
 
 class Histogram(MetricWrapper):
@@ -186,21 +208,24 @@ class Histogram(MetricWrapper):
         """
         super().__init__(name, job, units, labels, logger)
         self.metric = "histogram"
-        self.default_operation = "observe"
-        self.operations = {"observe": self._observe}
 
-    def _observe(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def observe(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing observe action of Histogram
 
         :param value: measured value
+        :param label_values: dictionary of labels and its values
         :raises ValueError: if value is not float
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self._observe.__qualname__}: accepts only float values")
+            self.error(f"{self.observe.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
-        self._values.append(("observe", value))
+        self.values.append(("observe", value))
 
 
 class Summary(MetricWrapper):
@@ -226,21 +251,24 @@ class Summary(MetricWrapper):
         """
         super().__init__(name, job, units, labels, logger)
         self.metric = "summary"
-        self.default_operation = "observe"
-        self.operations = {"observe": self._observe}
 
-    def _observe(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def observe(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing observe action of Summary
 
         :param value: measured value
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self._observe.__qualname__}: accepts only float values")
+            self.error(f"{self.observe.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
-        self._values.append(("observe", value))
+        self.values.append(("observe", value))
 
 
 class Counter(MetricWrapper):
@@ -266,21 +294,25 @@ class Counter(MetricWrapper):
         """
         super().__init__(name, job, units, labels, logger)
         self.metric = "counter"
-        self.default_operation = "inc"
-        self.operations = {"inc": self._inc}
 
-    def _inc(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def inc(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing inc action of counter
 
         :param value: measured value
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float >= 0
         """
-        _ = args
-        _ = kwargs
+
+        _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self._inc.__qualname__}: accepts only float values >= 0")
+            self.error(f"{self.inc.__qualname__}: accepts only float values >= 0")
             raise TypeError("Value must be float >= 0")
-        self._values.append(("inc", value))
+        self.values.append(("inc", value))
 
 
 class Info(MetricWrapper):
@@ -302,27 +334,31 @@ class Info(MetricWrapper):
         Set values that are in Type Record.
 
         :param units: units of measurement
+
         :param labels: label_names of metric viz. Type Record
         """
         if units is None:
             units = "info"
         super().__init__(name, job, units, labels, logger)
         self.metric = "info"
-        self.default_operation = "info"
-        self.operations = {"info": self._info}
 
-    def _info(self, value: typing.Dict[typing.Any, typing.Any], *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def info(
+        self,
+        value: typing.Dict[typing.Any, typing.Any],
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing info action of info
 
         :param value: measured value
+                :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not dictionary
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, dict):
-            self.error(f"{self._info.__qualname__}: accepts only dictionary values")
+            self.error(f"{self.info.__qualname__}: accepts only dictionary values")
             raise ValueError("Value must be dictionary")
-        self._values.append(("info", value))
+        self.values.append(("info", value))
 
 
 class Gauge(MetricWrapper):
@@ -348,51 +384,60 @@ class Gauge(MetricWrapper):
         """
         super().__init__(name, job, units, labels, logger)
         self.metric = "gauge"
-        self.default_operation = "inc"
-        self.operations = {
-            "inc": self._inc,
-            "dec": self._dec,
-            "set": self._set,
-        }
 
-    def _inc(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def inc(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing inc action of gauge
 
         :param value: measured value
+                :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float >= 0
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self._inc.__qualname__}: accepts only float values >= 0")
+            self.error(f"{self.inc.__qualname__}: accepts only float values >= 0")
             raise TypeError("Value must be float >= 0")
-        self._values.append(("inc", value))
+        self.values.append(("inc", value))
 
-    def _dec(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def dec(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing dec action of gauge
 
         :param value: measured value
+                :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float >= 0
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self._dec.__qualname__}: accepts only float values >= 0")
+            self.error(f"{self.dec.__qualname__}: accepts only float values >= 0")
             raise TypeError("Value must be float >= 0")
-        self._values.append(("dec", value))
+        self.values.append(("dec", value))
 
-    def _set(self, value: float, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def set(
+        self,
+        value: float,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing set action of gauge
 
         :param value: measured value
+                :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self._set.__qualname__}: accepts only float values")
+            self.error(f"{self.set.__qualname__}: accepts only float values")
             raise TypeError("Value must be float")
-        self._values.append(("set", value))
+        self.values.append(("set", value))
 
 
 class Enum(MetricWrapper):
@@ -423,25 +468,28 @@ class Enum(MetricWrapper):
             units = "enum"
         super().__init__(name, job, units, labels, logger)
         self.metric = "enum"
-        self.default_operation = "state"
         self.states = states
-        self.operations = {"state": self._state}
 
-    def _state(self, value: str, *args, **kwargs) -> None:
+    @StoreOperationDecorator
+    def state(
+        self,
+        value: str,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
         """Method representing state action of enum
 
         :param value: measured value
+                :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value not in states at initialization
         """
-        _ = args
-        _ = kwargs
+        _ = label_values
         if value not in self.states:
             self.warning(
-                f"{self._state.__qualname__}: state  {value!r} not allowed for Enum {self.name!r}. "
+                f"{self.state.__qualname__}: state  {value!r} not allowed for Enum {self.name!r}. "
                 f"Allowed values: {self.states!r}"
             )
             raise ValueError("Invalid state for Enum metric")
-        self._values.append(("state", value))
+        self.values.append(("state", value))
 
 
 class TimeProfiler(Histogram):
@@ -463,18 +511,17 @@ class TimeProfiler(Histogram):
         :raises RuntimeError: if start timestamps < number of stop measurement operation
         """
         super().__init__(name, job, "mS", labels, logger)
-        self.operations = {"stop": self._stop}
+        self.operations = {"stop": self.stop}
         self.default_operation = "stop"
         self.debug("TimeProfiler metric initialized")
 
     # ############################### measurement operations -> checking labels, not sending records
-    def _stop(self, value, start=None) -> None:
+    def stop(self, start: datetime.datetime, label_values: typing.Dict[str, str]) -> None:
         """Records time difference between last start_ts and now"""
-        _ = value
-
         method_time = dt.now() - start
-        self._observe(
+        self.observe(
             method_time.total_seconds() * 1000.0,
+            label_values,
         )
 
 
@@ -495,10 +542,10 @@ class ResponseSize(Histogram):
         :param labels: label_names of metric viz. Type Record
         """
         super().__init__(name, job, "B", labels, logger)
-        self.operations = {"rec": self._rec}
+        self.operations = {"rec": self.rec}
         self.default_operation = "rec"
         self.debug("ResponseSize metric initialized")
 
-    def _rec(self, value: str) -> None:
+    def rec(self, value: str, label_values: typing.Dict[str, str]) -> None:
         """records size of response"""
-        self._observe(float(sys.getsizeof(value)))
+        self.observe(float(sys.getsizeof(value)), label_values)

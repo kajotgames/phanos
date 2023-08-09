@@ -1,9 +1,6 @@
 """ """
 from __future__ import annotations
 
-# contextvars package is builtin but PyCharm do not recognize it
-# noinspection PyPackageRequirements
-import contextvars
 import inspect
 import logging
 import typing
@@ -12,16 +9,13 @@ from functools import wraps
 
 from . import log
 from .handlers import BaseHandler
-from .tree import ContextTree
+from .tree import ContextTree, curr_node
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
 from .types import LoggerLike
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
-
-# context var storing currently processed node. Is not part of MethodTree because of async
-curr_node = contextvars.ContextVar("curr_node")
 
 
 class Profiler(log.InstanceLoggerMixin):
@@ -356,9 +350,7 @@ class Profiler(log.InstanceLoggerMixin):
 
         if self.time_profile:
             # phanos after each decorated function profiling
-            self.time_profile.store_operation(
-                method=current_node.ctx.value, operation="stop", label_values={}, start=start_ts
-            )
+            self.time_profile.stop(start=start_ts, label_values={})
 
         if callable(self.after_func):
             # users custom metrics profiling after every decorated function if method passed
@@ -367,9 +359,7 @@ class Profiler(log.InstanceLoggerMixin):
         if current_node.parent() is self.tree.root:
             # phanos after root function profiling
             if self.resp_size_profile:
-                self.resp_size_profile.store_operation(
-                    method=current_node.ctx.value, operation="rec", value=result, label_values={}
-                )
+                self.resp_size_profile.rec(value=result, label_values={})
             if callable(self.after_root_func):
                 # users custom metrics profiling after root function if method passed
                 self.after_root_func(result, args, kwargs)
