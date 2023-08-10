@@ -3,9 +3,6 @@ import importlib
 import typing
 
 import phanos.publisher
-from . import (
-    publisher,
-)
 
 """
 example_config = {

@@ -14,7 +14,7 @@ from . import log
 from .types import LoggerLike
 
 # context var storing currently processed node. Is not part of MethodTree because of async
-curr_node = contextvars.ContextVar("curr_node")
+curr_node: contextvars.ContextVar = contextvars.ContextVar("curr_node")
 
 
 class Context:
@@ -106,10 +106,13 @@ class ContextTree(log.InstanceLoggerMixin):
 
         :param node: node which should be deleted
         """
+        node_parent: typing.Optional[MethodTreeNode] = None
+        if node.parent:
+            node_parent = node.parent()
         try:
-            if node.parent is not None and node.parent():
-                node.parent().children.remove(node)
-                node.parent().children.extend(node.children)
+            if isinstance(node_parent, MethodTreeNode):
+                node_parent.children.remove(node)
+                node_parent.children.extend(node.children)
             for child_to_move in node.children:
                 child_to_move.parent = node.parent
             node.children = []
@@ -136,6 +139,8 @@ class ContextTree(log.InstanceLoggerMixin):
         for child in root.children:
             return self.find_and_delete_node(node, child)
 
+        return False
+
     def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
         """Deletes whole subtree starting from param root. If param root is not passed, `self.root` is used
 
@@ -154,7 +159,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     Class representing one node of ContextTree
     """
 
-    parent: typing.Optional[weakref.ReferenceType[MethodTreeNode]]
+    parent: typing.Optional[weakref.ReferenceType]
     children: typing.List[MethodTreeNode]
     ctx: Context
 

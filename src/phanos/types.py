@@ -10,7 +10,7 @@ class Record(typing.TypedDict):
     item: str  # name of object measured
     metric: str  # metric used to measure item
     units: str  # units of metric used to measure item
-    value: typing.Union[float, str, tuple[str, typing.Union[float, dict[str, typing.Any]]]]  # value to record in
+    value: typing.Union[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]  # value to record in
     # metric, in given units
     job: str  # label marking who created the record
     method: str  # which method of item is measured

@@ -20,6 +20,11 @@ from .types import LoggerLike, Record
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
+BeforeType = typing.Optional[
+    typing.Callable[[typing.Callable[[...], typing.Any], typing.List[typing.Any], typing.Dict[str, typing.Any]], None]
+]
+AfterType = typing.Optional[typing.Callable[[typing.Any, typing.List[typing.Any], typing.Dict[str, typing.Any]], None]]
+
 
 class Profiler(log.InstanceLoggerMixin):
     """Class responsible for profiling and handling of measured values"""
@@ -36,10 +41,10 @@ class Profiler(log.InstanceLoggerMixin):
     handle_records: bool
 
     # space for user specific profiling logic
-    before_func: typing.Optional[typing.Callable]
-    after_func: typing.Optional[typing.Callable]
-    before_root_func: typing.Optional[typing.Callable]
-    after_root_func: typing.Optional[typing.Callable]
+    before_func: BeforeType
+    after_func: AfterType
+    before_root_func: BeforeType
+    after_root_func: AfterType
 
     def __init__(self) -> None:
         """Initialize Profiler
@@ -179,7 +184,6 @@ class Profiler(log.InstanceLoggerMixin):
         for metric in self.metrics.values():
             metric.cleanup()
 
-        self.tree.current_node = self.tree.root
         self.tree.clear()
 
     def add_metric(self, metric: MetricWrapper) -> None:
@@ -239,7 +243,7 @@ class Profiler(log.InstanceLoggerMixin):
         for metric in self.metrics.values():
             records = metric.to_records()
             for handler in self.handlers.values():
-                self.debug(f"handler %s handling metric %s", handler.handler_name, metric.name)
+                self.debug("handler %s handling metric %s", handler.handler_name, metric.name)
                 handler.handle(records, metric.name)
             metric.cleanup()
 
@@ -253,7 +257,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.handle_records_clear()
         self.tree.clear()
 
-    def profile(self, func: typing.Union[typing.Coroutine, typing.Callable]) -> typing.Callable:
+    def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
         """
         Decorator specifying which methods should be profiled.
         Default profiler is time profiler which measures execution time of decorated methods
@@ -271,11 +275,11 @@ class Profiler(log.InstanceLoggerMixin):
                 start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = func(*args, **kwargs)
-            except BaseException as e:
+            except BaseException as err:
                 # in case of exception handle measured records, cleanup and reraise
                 if self.handlers and self.handle_records:
                     self.after_function_handling(None, start_ts, args, kwargs)
-                raise e
+                raise err
             if self.handlers and self.handle_records:
                 self.after_function_handling(result, start_ts, args, kwargs)
             return result
@@ -288,10 +292,10 @@ class Profiler(log.InstanceLoggerMixin):
                 start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = await func(*args, **kwargs)
-            except BaseException as e:
+            except BaseException as err:
                 if self.handlers and self.handle_records:
                     self.after_function_handling(None, start_ts, args, kwargs)
-                raise e
+                raise err
             if self.handlers and self.handle_records:
                 self.after_function_handling(result, start_ts, args, kwargs)
             return result
@@ -393,15 +397,18 @@ class OutputFormatter:
         :param record: metric record which to convert
         """
         value = record["value"][1]
-        if not record.get("labels"):
+        labels = record.get("labels")
+        if not labels:
             return f"profiler: {name}, " f"method: {record.get('method')}, " f"value: {value} {record.get('units')}"
         # format labels as this "key=value, key2=value2"
-        labels = ", ".join(f"{k}={v}" for k, v in record["labels"].items())
+        str_labels = ""
+        if isinstance(labels, dict):
+            str_labels = "labels: " + ", ".join(f"{k}={v}" for k, v in labels.items())
         return (
             f"profiler: {name}, "
             f"method: {record.get('method')}, "
             f"value: {value} {record.get('units')}, "
-            f"labels: {labels}"
+            f"{str_labels}"
         )
 
 

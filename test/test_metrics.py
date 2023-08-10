@@ -122,12 +122,12 @@ class TestMetrics(unittest.TestCase):
         # invalid value type
         self.assertRaises(
             ValueError,
-            inf_no_lbl.info,
+            inf_no_lbl.info_,
             "asd",
         )
         inf_no_lbl.cleanup()
         # valid operation
-        inf_no_lbl.info({"value": "asd"}, None),
+        inf_no_lbl.info_({"value": "asd"}, None),
         self.assertEqual(inf_no_lbl.to_records(), testing_data.inf_no_lbl)
 
     def test_gauge(self):

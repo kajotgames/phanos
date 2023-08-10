@@ -12,86 +12,6 @@ from .tree import curr_node
 from .types import Record, LoggerLike
 
 
-VALUE_TYPES = typing.Union[
-    float,
-    str,
-    dict[str, typing.Any],
-    tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
-]
-OPERATION_TYPE = typing.Callable[["MetricWrapper", VALUE_TYPES, typing.Optional[typing.Dict[str, str]]], None]
-
-
-class StoreOperationDecorator:
-    """Decorator class used for all of Prometheus metrics measurement methods.
-
-    This decorator handles checking of all values that will be inserted into Record and
-    calls one of metrics operation method f.e. `Counter.inc`
-    """
-
-    operation: OPERATION_TYPE
-
-    def __init__(self, operation: OPERATION_TYPE):
-        """
-        :param operation: measurement method of one of basic Prometheus metrics
-        """
-        self.operation = operation
-
-    def __get__(
-        self, instance: MetricWrapper, owner: type[MetricWrapper]
-    ) -> typing.Callable[[VALUE_TYPES, typing.Optional[typing.Dict[str, str]]], None]:
-        """
-
-        :param instance: instance of basic Prometheus metric
-        :param owner: class of basic Prometheus metric
-        :return: wrapper
-        """
-        return lambda value, label_values=None: self.wrapper(instance, value, label_values)
-
-    def wrapper(
-        self,
-        instance: MetricWrapper,
-        value: VALUE_TYPES,
-        label_values: typing.Optional[typing.Dict[str, str]] = None,
-    ) -> None:
-        """
-        wrapper check if given labels are same as labels given at initialization of metric,
-        saves label_values, current method, and given operation with value. If any error occurs,
-        record is not saved.
-
-        :param instance:instance of basic Prometheus metric
-        :param value: measured value to be inserted
-        :param label_values: values of labels in format {'label_name': 'label_value'}
-        :raise ValueError: if any of label names are not known or missing, or if `self.operation`method did not
-        store any value.
-
-        """
-        if label_values is None:
-            label_values = {}
-        labels_ok = instance.check_labels(list(label_values.keys()))
-        if not labels_ok:
-            instance.error(
-                f"{self.operation.__qualname__}: expected labels: {instance.label_names}, "
-                f"labels given: {label_values.keys()}"
-            )
-            raise ValueError("Unknown or missing label")
-        instance.label_values.append(label_values)
-        try:
-            instance.method.append(curr_node.get().ctx.value)
-        except LookupError:
-            instance.error(f"{self.operation.__qualname__}: cannot get context from current node")
-            instance.method.append("Missing:method")
-
-        self.operation(instance, value, label_values)
-
-        if not len(instance.method) == len(instance.values):
-            instance.method.pop(-1)
-            instance.label_values.pop(-1)
-            raise ValueError("No operation stored")
-
-        if instance.values:
-            instance.debug("%r stored value %s", instance.name, instance.values[-1])
-
-
 class MetricWrapper(log.InstanceLoggerMixin):
     """Wrapper around all Prometheus metric types"""
 
@@ -183,6 +103,84 @@ class MetricWrapper(log.InstanceLoggerMixin):
         if self.item is not None:
             self.item.clear()
         self.debug("%s: metric %s cleared", self.cleanup.__qualname__, self.name)
+
+
+ValueTypes = typing.Union[
+    float,
+    str,
+    dict[str, typing.Any],
+    tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
+]
+OperationCallable = typing.Callable[["MetricWrapper", ValueTypes, typing.Optional[typing.Dict[str, str]]], None]
+
+
+class StoreOperationDecorator:
+    """Decorator class used for all of Prometheus metrics measurement methods.
+
+    This decorator handles checking of all values that will be inserted into Record and
+    calls one of metrics operation method f.e. `Counter.inc`
+    """
+
+    def __init__(self, operation: OperationCallable):
+        """
+        :param operation: measurement method of one of basic Prometheus metrics
+        """
+        self.operation = operation
+
+    def __get__(
+        self, instance: MetricWrapper, owner: type[MetricWrapper]
+    ) -> typing.Callable[[ValueTypes, typing.Optional[typing.Dict[str, str]]], None]:
+        """
+
+        :param instance: instance of basic Prometheus metric
+        :param owner: class of basic Prometheus metric
+        :return: wrapper
+        """
+        return lambda value, label_values=None: self.wrapper(instance, value, label_values)
+
+    def wrapper(
+        self,
+        instance: MetricWrapper,
+        value: ValueTypes,
+        label_values: typing.Optional[typing.Dict[str, str]] = None,
+    ) -> None:
+        """
+        wrapper check if given labels are same as labels given at initialization of metric,
+        saves label_values, current method, and given operation with value. If any error occurs,
+        record is not saved.
+
+        :param instance:instance of basic Prometheus metric
+        :param value: measured value to be inserted
+        :param label_values: values of labels in format {'label_name': 'label_value'}
+        :raise ValueError: if any of label names are not known or missing, or if `self.operation`method did not
+        store any value.
+
+        """
+        if label_values is None:
+            label_values = {}
+        labels_ok = instance.check_labels(list(label_values.keys()))
+        if not labels_ok:
+            instance.error(
+                f"{self.operation.__qualname__}: expected labels: {instance.label_names}, "
+                f"labels given: {label_values.keys()}"
+            )
+            raise ValueError("Unknown or missing label")
+        instance.label_values.append(label_values)
+        try:
+            instance.method.append(curr_node.get().ctx.value)
+        except LookupError:
+            instance.error(f"{self.operation.__qualname__}: cannot get context from current node")
+            instance.method.append("Missing:method")
+
+        self.operation(instance, value, label_values)
+
+        if not len(instance.method) == len(instance.values):
+            instance.method.pop(-1)
+            instance.label_values.pop(-1)
+            raise ValueError("No operation stored")
+
+        if instance.values:
+            instance.debug("%r stored value %s", instance.name, instance.values[-1])
 
 
 class Histogram(MetricWrapper):
@@ -343,7 +341,7 @@ class Info(MetricWrapper):
         self.metric = "info"
 
     @StoreOperationDecorator
-    def info(
+    def info_(
         self,
         value: typing.Dict[typing.Any, typing.Any],
         label_values: typing.Optional[typing.Dict[str, str]] = None,
@@ -356,7 +354,7 @@ class Info(MetricWrapper):
         """
         _ = label_values
         if not isinstance(value, dict):
-            self.error(f"{self.info.__qualname__}: accepts only dictionary values")
+            self.error(f"{self.info_.__qualname__}: accepts only dictionary values")
             raise ValueError("Value must be dictionary")
         self.values.append(("info", value))
 
