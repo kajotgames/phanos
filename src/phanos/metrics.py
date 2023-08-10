@@ -158,6 +158,8 @@ class StoreOperationDecorator:
         """
         if label_values is None:
             label_values = {}
+        if "error_raised" in instance.label_names:
+            label_values["error_raised"] = sys.exc_info()[0] is not None
         labels_ok = instance.check_labels(list(label_values.keys()))
         if not labels_ok:
             instance.error(

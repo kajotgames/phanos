@@ -11,6 +11,7 @@ example_config = {
     "time_profile": True, 
     "response_size_profile": False,
     "handle_records": True, 
+     "error_raised_label": True,
     "handlers": {
         "stdout_handler_ref": {
                 "class": "phanos.publisher.StreamHandler", 

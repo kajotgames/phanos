@@ -39,6 +39,7 @@ class Profiler(log.InstanceLoggerMixin):
 
     job: str
     handle_records: bool
+    _error_raised_label: bool
 
     # space for user specific profiling logic
     before_func: BeforeType
@@ -57,6 +58,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.handlers = {}
         self.job = ""
         self.handle_records = False
+        self._error_raised_label = False
 
         self.resp_size_profile = None
         self.time_profile = None
@@ -75,9 +77,11 @@ class Profiler(log.InstanceLoggerMixin):
         time_profile: bool = True,
         request_size_profile: bool = False,
         handle_records: bool = True,
+        error_raised_label: bool = False,
     ) -> None:
         """configure profiler instance
-        :param time_profile:
+        :param error_raised_label: if record should have label signalizing error occurrence
+        :param time_profile: if time profiling should be enabled
         :param job: name of job
         :param logger: logger instance
         :param request_size_profile: should create instance of response size profiler
@@ -85,7 +89,9 @@ class Profiler(log.InstanceLoggerMixin):
         """
         self.logger = logger or logging.getLogger(__name__)
         self.job = job
+
         self.handle_records = handle_records
+        self.error_raised_label = error_raised_label
 
         self.tree = ContextTree(self.logger)
 
@@ -108,6 +114,7 @@ class Profiler(log.InstanceLoggerMixin):
                 "logger": "my_app_debug_logger",
                 "time_profile": True,
                 "handle_records": True,
+                "error_raised_label": True,
                 "handlers": {
                     "stdout_handler": {
                         "class": "phanos.publisher.StreamHandler",
@@ -131,6 +138,7 @@ class Profiler(log.InstanceLoggerMixin):
             self.create_time_profiler()
         if settings.get("request_size_profile"):
             self.create_response_size_profiler()
+        self.error_raised_label = settings.get("error_raised_label", True)
         self.handle_records = settings.get("handle_records", True)
         if "handlers" in settings:
             named_handlers = phanos_config.create_handlers(settings["handlers"])
@@ -188,11 +196,14 @@ class Profiler(log.InstanceLoggerMixin):
 
     def add_metric(self, metric: MetricWrapper) -> None:
         """Adds new metric to profiling. If metric.name == existing metric name, existing metric will be overwritten.
+        Side effect: if `self.error_raised_label` True then additional label 'error_raised' is added into metric.
 
         :param metric: metric instance
         """
         if self.metrics.get(metric.name, None):
             self.warning(f"Metric {metric.name} already exist. Overwriting with new metric")
+        if self.error_raised_label:
+            metric.label_names.append("error_raised")
         self.metrics[metric.name] = metric
         self.debug(f"Metric {metric.name} added to phanos profiler")
 
@@ -342,7 +353,7 @@ class Profiler(log.InstanceLoggerMixin):
 
         return start_ts
 
-    def after_function_handling(self, result, start_ts, args, kwargs) -> None:
+    def after_function_handling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
         """Method for handling after function profiling chores
 
         Deletes current node and sets ContextVar to current_node.parent,
@@ -384,6 +395,24 @@ class Profiler(log.InstanceLoggerMixin):
         else:
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")
+
+    @property
+    def error_raised_label(self) -> bool:
+        return self._error_raised_label
+
+    @error_raised_label.setter
+    def error_raised_label(self, value: bool):
+        self._error_raised_label = value
+        if not value:
+            for metric in self.metrics.values():
+                try:
+                    _ = metric.label_names.remove("error_raised")
+                except ValueError:
+                    pass
+        else:
+            for metric in self.metrics.values():
+                if "error_raised" not in metric.label_names:
+                    metric.label_names.append("error_raised")
 
 
 class OutputFormatter:
@@ -441,6 +470,7 @@ class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
     publisher: BlockingPublisher
+    formatter: OutputFormatter
     logger: typing.Optional[LoggerLike]
 
     def __init__(
@@ -506,8 +536,9 @@ class ImpProfHandler(BaseHandler):
             self.logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
-        self.logger.info("ImpProfHandler created successfully")
         self.publisher.close()
+        self.formatter = OutputFormatter()
+        self.logger.info("ImpProfHandler created successfully")
 
     def handle(
         self,
@@ -520,9 +551,18 @@ class ImpProfHandler(BaseHandler):
         :param records: list of records to publish
         """
 
-        _ = profiler_name
         for record in records:
             _ = self.publisher.publish(record)
+        self.log_error_profiling(profiler_name, records)
+
+    def log_error_profiling(self, name: str, records: typing.List[Record]):
+        error_raised = False
+        for record in records:
+            if record.get("labels", {}).get("error_raised"):
+                error_raised = True
+        if error_raised:
+            for record in records:
+                self.logger.info(self.formatter.record_to_str(name, record))
 
 
 class LoggerHandler(BaseHandler):

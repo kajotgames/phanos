@@ -3,6 +3,8 @@ from io import StringIO
 import sys
 from os.path import dirname, abspath, join
 
+import phanos.publisher
+
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
@@ -21,7 +23,7 @@ from src.phanos.metrics import (
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST")
+        phanos_profiler.config(job="TEST", error_raised_label=False)
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -218,3 +220,23 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(method, testing_data.custom_profile_out[i]["method"])
             self.assertEqual(float(value), testing_data.custom_profile_out[i]["value"])
             self.assertEqual(place, testing_data.custom_profile_out[i]["place"])
+
+    def test_error_occurred_flag(self):
+        test_profiler = phanos.publisher.Profiler()
+        hist = Histogram(name="hist", job="TEST", units="V")
+        self.assertNotIn("error_raised", hist.label_names)
+        test_profiler.add_metric(hist)
+        self.assertNotIn("error_raised", hist.label_names)
+        test_profiler.config(job="TEST", error_raised_label=True)
+        self.assertIn("error_raised", hist.label_names)
+        test_profiler.error_raised_label = False
+        self.assertNotIn("error_raised", hist.label_names)
+        hist.observe(2.0, None)
+        self.assertEqual([{}], hist.label_values)
+        self.assertEqual([], hist.label_names)
+
+        test_profiler.error_raised_label = True
+        hist.observe(2.0, None)
+
+        self.assertEqual([{}, {"error_raised": False}], hist.label_values)
+        self.assertEqual(["error_raised"], hist.label_names)
