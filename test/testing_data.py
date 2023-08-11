@@ -223,3 +223,9 @@ sync_in_async_methods = [
     "AsyncTest:sync_in_async.sync_access_long",
 ]
 sync_in_async_values = [2.0, 2.0, 2.0, 2.0]
+
+error_flag_out = [
+    ("DummyResource:post.delete.put", "error_raised=True"),
+    ("DummyResource:post.delete", "error_raised=False"),
+    ("DummyResource:post", "error_raised=False"),
+]

@@ -58,7 +58,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.handlers = {}
         self.job = ""
         self.handle_records = False
-        self._error_raised_label = False
+        self._error_raised_label = True
 
         self.resp_size_profile = None
         self.time_profile = None
@@ -77,7 +77,7 @@ class Profiler(log.InstanceLoggerMixin):
         time_profile: bool = True,
         request_size_profile: bool = False,
         handle_records: bool = True,
-        error_raised_label: bool = False,
+        error_raised_label: bool = True,
     ) -> None:
         """configure profiler instance
         :param error_raised_label: if record should have label signalizing error occurrence
@@ -113,6 +113,7 @@ class Profiler(log.InstanceLoggerMixin):
                 "job": "my_app",
                 "logger": "my_app_debug_logger",
                 "time_profile": True,
+                "request_size_profile": False,
                 "handle_records": True,
                 "error_raised_label": True,
                 "handlers": {
@@ -562,7 +563,7 @@ class ImpProfHandler(BaseHandler):
                 error_raised = True
         if error_raised:
             for record in records:
-                self.logger.info(self.formatter.record_to_str(name, record))
+                self.logger.debug(self.formatter.record_to_str(name, record))
 
 
 class LoggerHandler(BaseHandler):

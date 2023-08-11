@@ -9,7 +9,7 @@ example_config = {
     "job": "my_app", 
     "logger": "my_app_debug_logger", 
     "time_profile": True, 
-    "response_size_profile": False,
+    "request_size_profile": False,
     "handle_records": True, 
      "error_raised_label": True,
     "handlers": {

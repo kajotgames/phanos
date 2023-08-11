@@ -57,7 +57,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
                 loop.create_task(async_access.raise_error()),
             )
         self.output.seek(0)
-        methods, _ = common.parse_output(self.output.readlines())
+        methods, _, _ = common.parse_output(self.output.readlines())
         methods.sort()
         self.assertEqual(methods, ["AsyncTest:raise_error", "AsyncTest:raise_error.async_access_short"])
 
@@ -67,7 +67,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         _ = await async_access.await_test()
 
         self.output.seek(0)
-        methods, values = common.parse_output(self.output.readlines())
+        methods, values, _ = common.parse_output(self.output.readlines())
         methods.sort()
         values.sort()
         self.assertEqual(methods, testing_data.test_await_out_methods)
@@ -81,7 +81,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait([task1, task2])
 
         self.output.seek(0)
-        methods, values = common.parse_output(self.output.readlines())
+        methods, values, _ = common.parse_output(self.output.readlines())
         methods.sort()
         values.sort()
         self.assertEqual(methods, testing_data.test_task_out_methods)
@@ -91,7 +91,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         async_access = dummy_api.AsyncTest()
         await async_access.test_mix()
         self.output.seek(0)
-        methods, values = common.parse_output(self.output.readlines())
+        methods, values, _ = common.parse_output(self.output.readlines())
         methods.sort()
         values.sort()
         self.assertEqual(methods, testing_data.test_mix_out_methods)
@@ -104,7 +104,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         task2 = loop.create_task(async_access.sync_in_async())
         await asyncio.wait([task1, task2])
         self.output.seek(0)
-        methods, values = common.parse_output(self.output.readlines())
+        methods, values, _ = common.parse_output(self.output.readlines())
         methods.sort()
         values.sort()
         self.assertEqual(methods, testing_data.sync_in_async_methods)
@@ -117,7 +117,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         # wait for tasks to finish
         await asyncio.sleep(0.4)
         self.output.seek(0)
-        methods, _ = common.parse_output(self.output.readlines())
+        methods, _, _ = common.parse_output(self.output.readlines())
         #  root method finished before nested task -> just root method in profiling output
         self.assertEqual(methods[0], "AsyncTest:wo_await")
         # nested method would be sent with next profiling, but value was measured
@@ -130,7 +130,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         await async_access.all_task_possibilities()
         self.output.seek(0)
         profiler.time_profile.cleanup()
-        methods, _ = common.parse_output(self.output.readlines())
+        methods, _, _ = common.parse_output(self.output.readlines())
         methods.sort()
         _ = methods.pop(0)
         for method in methods:
