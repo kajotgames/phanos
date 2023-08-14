@@ -25,6 +25,10 @@ Both options uses these attributes:
 - `response_size_profile` _(optional)_ by default _profiler_ will not track size of return value
 - `handle_records` _(optional)_ by default _profiler_ measures values and handles them; 
 if False then no profiling is made or handled
+- `error_raised_label` _(optional)_ by default profiler will not add label `error_raised` to each
+record; if set, every record will have information if given profiled function/method raised error; if error raised,
+profiling will be logged even if no `LoggerHandler` exists
+
 - `handlers` _(optional)_ serialized named handlers to publish profiled records; 
 if no handlers specified then no measurements are made; for handlers description refer to [Handlers](#handlers).
   - `class` class handler to initialized
@@ -42,8 +46,9 @@ settings = {
     "job": "my_app", 
     "logger": "my_app_debug_logger", 
     "time_profile": True, 
-    "response_size_profile": False,
+    "request_size_profile": False,
     "handle_records": True, 
+    "error_raised_label": False,
     "handlers": {
         "stdout_handler_ref": {
                 "class": "phanos.handlers.StreamHandler", 
@@ -66,7 +71,7 @@ Example of configuration:
     # some code
     class SomeApp(Flask):
         """some code""" 
-        phanos.profiler.config(logger, time_profile, resp_size_profile, handle_records)
+        phanos.profiler.config(logger, time_profile, resp_size_profile, handle_records, error_raised_label)
         log_handler = phanos.handlers.LoggerHandler('handler_name', logger_instance, logging_level)
         phanos.profiler.add_handler(log_handler)    
         # some code

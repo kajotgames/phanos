@@ -170,6 +170,9 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
 
         def before_root_func(func, args, kwargs):
+            _ = args
+            _ = kwargs
+            _ = func
             hist.observe(
                 1.0,
                 {"place": "before_root"},

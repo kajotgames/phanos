@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import unittest
 from io import StringIO
 import sys

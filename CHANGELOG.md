@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 
+- if `error_raised_label` set and error raised, profiling will be printed with logger
+- added `error_raised_label` flag into `Profiler.config` and `Profiler.dict_config` if turned
+on, each record have additional label describing if profiled function/method raised error
 - asyncio profiling support
 - `phanos.publisher.NamedLoggerHandler` designed to be used of configuration `profile.dict_config`
 

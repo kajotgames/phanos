@@ -180,7 +180,6 @@ class DummyResource(Resource):
     @profile
     def put(self):
         flask.abort(400, "some shit")
-        return {"success", True}, 200
 
 
 app = Flask("TEST")
