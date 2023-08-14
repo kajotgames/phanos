@@ -1,12 +1,5 @@
-import sys
 import unittest
-from os.path import join, dirname, abspath
 from unittest.mock import patch
-
-path = join(join(dirname(__file__), ".."), "")
-path = abspath(path)
-if path not in sys.path:
-    sys.path.insert(0, path)
 
 from src.phanos import phanos_profiler
 from src.phanos.tree import MethodTreeNode, ContextTree

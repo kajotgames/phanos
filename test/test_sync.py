@@ -1,14 +1,7 @@
 import logging
 import unittest
 from io import StringIO
-import sys
-from os.path import dirname, abspath, join
 from unittest.mock import patch, MagicMock
-
-path = join(join(dirname(__file__), ".."), "")
-path = abspath(path)
-if path not in sys.path:
-    sys.path.insert(0, path)
 
 import phanos
 from phanos import publisher

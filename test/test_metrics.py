@@ -1,11 +1,4 @@
-import sys
 import unittest
-from os.path import join, dirname, abspath
-
-path = join(join(dirname(__file__), ".."), "")
-path = abspath(path)
-if path not in sys.path:
-    sys.path.insert(0, path)
 
 from src.phanos.metrics import Histogram, Summary, Counter, Info, Gauge, Enum
 from test import testing_data

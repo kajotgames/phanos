@@ -1,18 +1,20 @@
 # you can just run `run_tests.py`
-# or `python -m unittest`
-# or for coverage `python -m coverage run -m unittest` then `python -m coverage report`
-import unittest
+import coverage
 import sys
-from os.path import dirname, abspath, join
+import unittest
+from os.path import join, dirname
 
-path = join(join(dirname(__file__), ".."), "")
-path = abspath(path)
-if path not in sys.path:
-    sys.path.insert(0, path)
 
-from test import test_tree, test_handlers, test_metrics, test_config, test_async, test_sync
+src_path = join(join(dirname(__file__), ".."), "")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 if __name__ == "__main__":
+    cov = coverage.Coverage(omit=["*/test/*"])
+    cov.start()
+    # import after cov.start() due to correct coverage report
+    from test import test_tree, test_handlers, test_metrics, test_config, test_async, test_sync
+
     test_classes = [
         test_tree.TestTree,
         test_handlers.TestHandlers,
@@ -27,8 +29,11 @@ if __name__ == "__main__":
     for class_ in test_classes:
         suite = loader.loadTestsFromTestCase(class_)
         class_suites.append(suite)
-
     suite_ = unittest.TestSuite(class_suites)
     runner = unittest.TextTestRunner()
     results = runner.run(suite_)
+    cov.stop()
+    cov.save()
+    cov.report()
+    cov.html_report()
     exit()

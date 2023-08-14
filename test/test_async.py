@@ -1,17 +1,9 @@
 import asyncio
 import unittest
 from io import StringIO
-import sys
-from os.path import dirname, abspath, join
-
-path = join(join(dirname(__file__), ".."), "")
-path = abspath(path)
-if path not in sys.path:
-    sys.path.insert(0, path)
-
 
 from src.phanos import profiler
-from phanos.publisher import StreamHandler
+from src.phanos.publisher import StreamHandler
 from test import dummy_api, common, testing_data
 from test.dummy_api import app
 
