@@ -16,18 +16,18 @@ if path not in sys.path:
 from src.phanos import phanos_profiler
 from phanos.publisher import BaseHandler, ImpProfHandler, LoggerHandler, NamedLoggerHandler, StreamHandler
 from test import testing_data, dummy_api, common
-from phanos import messaging
 
 
 class TestHandlers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=True)
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False, error_raised_label=False)
 
     @classmethod
     def tearDownClass(cls) -> None:
         phanos_profiler.delete_handlers()
         phanos_profiler.delete_metrics(True, True)
+        phanos_profiler.error_raised_label = False
 
     def tearDown(self) -> None:
         phanos_profiler.delete_handlers()
@@ -109,37 +109,3 @@ class TestHandlers(unittest.TestCase):
 
             handler.handle(profiler_name="name", records=testing_data.test_handler_in)
             test_publish.assert_called()
-
-    @patch("phanos.publisher.BlockingPublisher")
-    def test_error_occurred_handling(self, publisher_mock):
-        phanos_profiler.error_raised_label = True
-
-        output = StringIO()
-        logger = logging.getLogger()
-        logger.setLevel(10)
-        handler = logging.StreamHandler(output)
-        handler.setLevel(10)
-        logger.addHandler(handler)
-
-        handler = publisher.ImpProfHandler("kebabos", logger=logger)
-        phanos_profiler.add_handler(handler)
-        publisher_instance = MagicMock()
-        publisher_instance.execute.return_value = "testing"
-        publisher_mock.return_value = publisher_instance
-
-        self.client = dummy_api.app.test_client()
-        # No error raised -> profiling not in logs
-        _ = self.client.get("http://localhost/api/dummy/one")
-        output.seek(0)
-        self.assertEqual(output.read().find("error_raised"), -1)
-        # error raised -> profiling in logs
-        output.seek(0)
-        _ = self.client.post("http://localhost/api/dummy/one")
-        output.seek(0)
-        logs = output.readlines()
-        for pos, line in enumerate(logs):
-            if line.find("profiler: time_profiler") != -1:
-                lines = logs[pos : pos + 3]
-                methods, _, labels = common.parse_output(lines)
-                self.assertEqual(testing_data.error_flag_out, list(zip(methods, labels)))
-                break

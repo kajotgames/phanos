@@ -2,10 +2,6 @@ import sys
 import unittest
 from os.path import join, dirname, abspath
 
-from flask import Flask
-from flask.ctx import AppContext
-from flask.testing import FlaskClient
-
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
@@ -13,55 +9,45 @@ if path not in sys.path:
 
 from src.phanos.metrics import Histogram, Summary, Counter, Info, Gauge, Enum
 from test import testing_data
-from test.dummy_api import app
 
 
 class TestMetrics(unittest.TestCase):
-    app: Flask
-    client: FlaskClient
-    context: AppContext
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.app = app
-
     def test_histogram(self):
-        with app.test_request_context():
-            hist_no_lbl = Histogram(
-                "hist_no_lbl",
-                "TEST",
-                "V",
-            )
-            # invalid label
-            self.assertRaises(
-                ValueError,
-                hist_no_lbl.observe,
-                2.0,
-                label_values={"nonexistent": "123"},
-            )
-            # invalid value
-            self.assertRaises(
-                TypeError,
-                hist_no_lbl.observe,
-                "asd",
-            )
-            hist_no_lbl.cleanup()
-            # valid operation
-            hist_no_lbl.observe(2.0, None),
-            self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
+        hist_no_lbl = Histogram(
+            "hist_no_lbl",
+            "TEST",
+            "V",
+        )
+        # invalid label
+        self.assertRaises(
+            ValueError,
+            hist_no_lbl.observe,
+            2.0,
+            label_values={"nonexistent": "123"},
+        )
+        # invalid value
+        self.assertRaises(
+            TypeError,
+            hist_no_lbl.observe,
+            "asd",
+        )
+        hist_no_lbl.cleanup()
+        # valid operation
+        hist_no_lbl.observe(2.0, None),
+        self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
 
-            hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
+        hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
 
-            # missing label
-            self.assertRaises(
-                ValueError,
-                hist_w_lbl.observe,
-                2.0,
-            )
-            hist_w_lbl.cleanup()
-            # default operation
-            hist_w_lbl.observe(2.0, {"test": "test"})
-            self.assertEqual(hist_w_lbl.to_records(), testing_data.hist_w_lbl)
+        # missing label
+        self.assertRaises(
+            ValueError,
+            hist_w_lbl.observe,
+            2.0,
+        )
+        hist_w_lbl.cleanup()
+        # default operation
+        hist_w_lbl.observe(2.0, {"test": "test"})
+        self.assertEqual(hist_w_lbl.to_records(), testing_data.hist_w_lbl)
 
     def test_summary(self):
         sum_no_lbl = Summary("sum_no_lbl", "TEST", "V")
@@ -175,24 +161,23 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(gauge_no_lbl.to_records(), testing_data.gauge_no_lbl)
 
     def test_enum(self):
-        with app.test_request_context():
-            enum_no_lbl = Enum(
-                "enum_no_lbl",
-                "TEST",
-                ["true", "false"],
-            )
-            # invalid value
-            self.assertRaises(
-                ValueError,
-                enum_no_lbl.state,
-                "maybe",
-            )
+        enum_no_lbl = Enum(
+            "enum_no_lbl",
+            "TEST",
+            ["true", "false"],
+        )
+        # invalid value
+        self.assertRaises(
+            ValueError,
+            enum_no_lbl.state,
+            "maybe",
+        )
 
-            enum_no_lbl.cleanup()
-            # valid operation
-            enum_no_lbl.state("true", None)
-            self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
+        enum_no_lbl.cleanup()
+        # valid operation
+        enum_no_lbl.state("true", None)
+        self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
 
-            enum_no_lbl.state("true", None)
-            enum_no_lbl.values.pop(0)
-            self.assertRaises(RuntimeError, enum_no_lbl.to_records)
+        enum_no_lbl.state("true", None)
+        enum_no_lbl.values.pop(0)
+        self.assertRaises(RuntimeError, enum_no_lbl.to_records)

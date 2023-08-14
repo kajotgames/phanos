@@ -9,5 +9,8 @@ def parse_output(out: typing.List[str]) -> typing.Tuple[list, list, list]:
         split = line.split(", ")
         methods.append(split[1].split(": ")[1])
         values.append(float(split[2].split(": ")[1][:-3]) // 100)
-        labels.append(split[3].split(": ")[1][:-1])
+        try:
+            labels.append(split[3].split(": ")[1][:-1])
+        except IndexError:
+            pass
     return methods, values, labels

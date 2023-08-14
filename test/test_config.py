@@ -30,6 +30,7 @@ SETTING_DICT = {
     "logger": "my_app_debug_logger",
     "time_profile": True,
     "request_size_profile": True,
+    "error_raised_label": False,
     "handle_records": True,
     "handlers": HANDLERS_DICT,
 }

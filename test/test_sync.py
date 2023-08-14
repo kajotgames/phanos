@@ -1,19 +1,20 @@
+import logging
 import unittest
 from io import StringIO
 import sys
 from os.path import dirname, abspath, join
-
-import phanos.publisher
+from unittest.mock import patch, MagicMock
 
 path = join(join(dirname(__file__), ".."), "")
 path = abspath(path)
 if path not in sys.path:
     sys.path.insert(0, path)
 
-from src.phanos import publisher
+import phanos
+from phanos import publisher
 from src.phanos import phanos_profiler
-from phanos.publisher import StreamHandler
-from test import testing_data, dummy_api
+from phanos.publisher import StreamHandler, ImpProfHandler
+from test import testing_data, dummy_api, common
 from test.dummy_api import app, DummyDbAccess
 from src.phanos.metrics import (
     Histogram,
@@ -23,7 +24,7 @@ from src.phanos.metrics import (
 class TestProfiling(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", error_raised_label=False)
+        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False, error_raised_label=False)
         cls.app = app
         cls.client = cls.app.test_client()  # type: ignore[attr-defined]
 
@@ -41,6 +42,7 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.after_root_func = None
         phanos_profiler.before_func = None
         phanos_profiler.after_func = None
+        phanos_profiler.error_raised_label = False
         self.output.close()
 
     def test_metric_management(self):
@@ -226,9 +228,8 @@ class TestProfiling(unittest.TestCase):
         hist = Histogram(name="hist", job="TEST", units="V")
         self.assertNotIn("error_raised", hist.label_names)
         test_profiler.add_metric(hist)
-        self.assertNotIn("error_raised", hist.label_names)
-        test_profiler.config(job="TEST", error_raised_label=True)
         self.assertIn("error_raised", hist.label_names)
+        test_profiler.config(job="TEST", error_raised_label=True)
         test_profiler.error_raised_label = False
         self.assertNotIn("error_raised", hist.label_names)
         hist.observe(2.0, None)
@@ -240,3 +241,37 @@ class TestProfiling(unittest.TestCase):
 
         self.assertEqual([{}, {"error_raised": False}], hist.label_values)
         self.assertEqual(["error_raised"], hist.label_names)
+
+    @patch("phanos.publisher.BlockingPublisher")
+    def test_error_occurred_handling(self, publisher_mock):
+        phanos_profiler.error_raised_label = True
+
+        output = StringIO()
+        logger = logging.getLogger()
+        logger.setLevel(10)
+        handler = logging.StreamHandler(output)
+        handler.setLevel(10)
+        logger.addHandler(handler)
+
+        handler = ImpProfHandler("imp", logger=logger)
+        phanos_profiler.add_handler(handler)
+        publisher_instance = MagicMock()
+        publisher_instance.execute.return_value = "testing"
+        publisher_mock.return_value = publisher_instance
+
+        # No error raised -> profiling not in logs
+        _ = self.client.get("http://localhost/api/dummy/one")
+        output.seek(0)
+        self.assertEqual(output.read().find("error_raised"), -1)
+        # error raised -> profiling in logs
+        output.seek(0)
+        _ = self.client.post("http://localhost/api/dummy/one")
+
+        output.seek(0)
+        logs = output.readlines()
+        for pos, line in enumerate(logs):
+            if line.find("profiler: time_profiler") != -1:
+                lines = logs[pos : pos + 3]
+                methods, _, labels = common.parse_output(lines)
+                self.assertEqual(testing_data.error_flag_out, list(zip(methods, labels)))
+                break
