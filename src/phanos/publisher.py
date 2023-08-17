@@ -21,7 +21,14 @@ TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
 BeforeType = typing.Optional[
-    typing.Callable[[typing.Callable[[...], typing.Any], typing.List[typing.Any], typing.Dict[str, typing.Any]], None]
+    typing.Callable[
+        [
+            typing.Callable[[...], typing.Any],
+            typing.List[typing.Any],
+            typing.Dict[str, typing.Any],
+        ],
+        None,
+    ]
 ]
 AfterType = typing.Optional[typing.Callable[[typing.Any, typing.List[typing.Any], typing.Dict[str, typing.Any]], None]]
 
@@ -647,6 +654,7 @@ class StreamHandler(BaseHandler):
 
     formatter: OutputFormatter
     output: typing.TextIO
+
     _lock: threading.Lock
 
     def __init__(self, handler_name: str, output: typing.TextIO = sys.stdout) -> None:

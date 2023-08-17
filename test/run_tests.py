@@ -1,4 +1,7 @@
-# you can just run `run_tests.py`
+# run tests wit `python ./run_tests.py`
+
+# coverage is in requirements-dev
+# noinspection PyPackageRequirements
 import coverage
 import sys
 import unittest
@@ -23,7 +26,6 @@ if __name__ == "__main__":
         test_config.TestConfig,
         test_async.TestAsyncProfile,
     ]
-
     loader = unittest.TestLoader()
     class_suites = []
     for class_ in test_classes:
