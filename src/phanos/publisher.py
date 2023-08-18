@@ -569,8 +569,11 @@ class ImpProfHandler(BaseHandler):
             if record.get("labels", {}).get("error_raised"):
                 error_raised = True
         if error_raised:
+            converted = []
             for record in records:
-                self.logger.debug(self.formatter.record_to_str(name, record))
+                converted.append(self.formatter.record_to_str(name, record))
+            out = "\n".join(converted)
+            self.logger.debug(out)
 
 
 class LoggerHandler(BaseHandler):
@@ -610,8 +613,11 @@ class LoggerHandler(BaseHandler):
         :param profiler_name: name of profiler
         :param records: list of records
         """
+        converted = []
         for record in records:
-            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+            converted.append(self.formatter.record_to_str(profiler_name, record))
+        out = "\n".join(converted)
+        self.logger.log(self.level, out)
 
 
 class NamedLoggerHandler(BaseHandler):
@@ -645,8 +651,11 @@ class NamedLoggerHandler(BaseHandler):
         :param profiler_name: name of profiler
         :param records: list of records
         """
+        converted = []
         for record in records:
-            self.logger.log(self.level, self.formatter.record_to_str(profiler_name, record))
+            converted.append(self.formatter.record_to_str(profiler_name, record))
+        out = "\n".join(converted)
+        self.logger.log(self.level, out)
 
 
 class StreamHandler(BaseHandler):

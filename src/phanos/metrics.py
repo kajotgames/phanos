@@ -520,7 +520,7 @@ class TimeProfiler(Histogram):
         """Records time difference between last start_ts and now"""
         method_time = dt.now() - start
         self.observe(
-            method_time.total_seconds() * 1000.0,
+            round(method_time.total_seconds() * 1000.0, 2),
             label_values,
         )
 

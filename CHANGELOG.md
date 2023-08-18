@@ -6,11 +6,19 @@ this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [0.2.1]
+## [0.2.2] - 2023-08-18
+
+### Modified
+
+- time profiler measurements have precision of two decimal places
+- records are printed in one log message instead of log per record
+
+## [0.2.1] - 2023-08-16
+
+### Added
 
 - added support for Mypy analysis
 
-### Added
 
 ## [0.2.0] - 2023-08-05
 
