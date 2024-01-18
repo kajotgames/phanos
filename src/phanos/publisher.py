@@ -563,10 +563,15 @@ class ImpProfHandler(BaseHandler):
             _ = self.publisher.publish(record)
         self.log_error_profiling(profiler_name, records)
 
-    def log_error_profiling(self, name: str, records: typing.List[Record]):
+    def log_error_profiling(self, name: str, records: typing.List[Record]) -> None:
+        """Logs records only if some of profiled methods raised error and error_raised label is present in records
+
+        :param name: name of profiler
+        :param records: list of records
+        """
         error_raised = False
         for record in records:
-            if record.get("labels", {}).get("error_raised"):
+            if record.get("labels", {}).get("error_raised", "False") == "True":
                 error_raised = True
         if error_raised:
             converted = []
