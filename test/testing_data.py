@@ -21,29 +21,28 @@ profiling_out = [
     },
 ]
 
-test_handler_in = (
-    {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
-        "method": "DummyResource:get.first_access",
-        "labels": {"test": "value"},
-        "value": ("observe", 2.0),
-    },
-)
-test_handler_in_no_lbl = (
-    {
-        "item": "DummyResource",
-        "metric": "histogram",
-        "units": "mS",
-        "job": "TEST",
-        "method": "DummyResource:get.first_access",
-        "labels": {},
-        "value": ("observe", 2.0),
-    },
-)
-test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test=value\n"
+
+test_handler_in_no_lbl = {
+    "item": "DummyResource",
+    "metric": "histogram",
+    "units": "mS",
+    "job": "TEST",
+    "method": "DummyResource:get.first_access",
+    "labels": {},
+    "value": ("observe", 2.0),
+}
+
+test_handler_in = {
+    "item": "DummyResource",
+    "metric": "histogram",
+    "units": "mS",
+    "job": "TEST",
+    "method": "DummyResource:get.first_access",
+    "labels": {"test": "value", "error_raised": "True"},
+    "value": ("observe", 2.0),
+}
+
+test_handler_out = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS, labels: test=value, error_raised=True\n"
 test_handler_out_no_lbl = "profiler: test_name, method: DummyResource:get.first_access, value: 2.0 mS\n"
 
 hist_no_lbl = [

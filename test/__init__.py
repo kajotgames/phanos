@@ -17,5 +17,6 @@ from . import (
     test_tree,
     test_metrics,
     test_handlers,
+    test_messaging,
     run_tests,
 )

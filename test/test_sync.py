@@ -101,7 +101,6 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric.values, [])
             self.assertEqual(metric.label_values, [])
             self.assertEqual(metric.method, [])
-            self.assertEqual(metric.item, [])
 
         # profiling after request, where error_occurred
         _ = self.client.get("http://localhost/api/dummy/one")
@@ -150,7 +149,6 @@ class TestProfiling(unittest.TestCase):
             self.assertEqual(metric.values, [])
             self.assertEqual(metric.label_values, [])
             self.assertEqual(metric.method, [])
-            self.assertEqual(metric.item, [])
 
         self.assertEqual(phanos_profiler.tree.root.children, [])
 

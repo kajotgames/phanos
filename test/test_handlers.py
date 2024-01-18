@@ -4,100 +4,105 @@ import unittest
 from io import StringIO
 from unittest.mock import patch, MagicMock
 
+from pika.adapters.utils.connection_workflow import AMQPConnectorException
+
 import phanos
 from src.phanos import phanos_profiler
-from phanos.publisher import BaseHandler, ImpProfHandler, LoggerHandler, NamedLoggerHandler, StreamHandler
+from phanos.publisher import (
+    BaseHandler,
+    ImpProfHandler,
+    LoggerHandler,
+    NamedLoggerHandler,
+    StreamHandler,
+    OutputFormatter,
+)
 from test import testing_data
 
 
+class TestOutputFormatter(unittest.TestCase):
+    def test_record_to_str(self):
+        record = testing_data.test_handler_in
+        r = OutputFormatter().record_to_str("test_name", record)
+        self.assertEqual(
+            r,
+            testing_data.test_handler_out[:-1],
+        )
+
+
 class TestHandlers(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False, error_raised_label=False)
+    def test_base_handler_init(self):
+        base = BaseHandler("test_handler")
+        self.assertEqual(base.handler_name, "test_handler")
 
-    @classmethod
-    def tearDownClass(cls) -> None:
-        phanos_profiler.delete_handlers()
-        phanos_profiler.delete_metrics(True, True)
-        phanos_profiler.error_raised_label = False
-
-    def tearDown(self) -> None:
-        phanos_profiler.delete_handlers()
-
-    def test_stream_handler(self):
-        # base handler test
+        # base handler.handle
         base = BaseHandler("test_handler")
         self.assertRaises(NotImplementedError, base.handle, "test_profiler", {})
-        # stream handler
+
+    @patch("phanos.publisher.BlockingPublisher")
+    @patch("phanos.publisher.ImpProfHandler.log_error_profiling")
+    def test_imp_prof_handler(self, mock_profiling: MagicMock, mock_publisher: MagicMock):
+        mock_publisher.return_value.connect.return_value = True
+        with self.subTest("VALID INIT"):
+            handler = ImpProfHandler("rabbit")
+            mock_publisher.assert_called_once()
+            mock_publisher.return_value.connect.assert_called_once()
+            mock_publisher.return_value.close.assert_called_once()
+            self.assertIsNotNone(handler.formatter)
+
+        mock_publisher.return_value.connect.side_effect = AMQPConnectorException()
+        with self.subTest("INVALID INIT"):
+            with self.assertRaises(RuntimeError):
+                _ = ImpProfHandler("rabbit")
+
+        mock_publisher.return_value.connect.side_effect = None
+        with self.subTest("HANDLE"):
+            records = [testing_data.test_handler_in, testing_data.test_handler_in]
+            handler = ImpProfHandler("rabbit")
+            handler.handle(records, "test_name")
+            self.assertEqual(mock_publisher.return_value.publish.call_count, 2)
+            mock_profiling.assert_called_once_with("test_name", records)
+
+    @patch("phanos.publisher.BlockingPublisher")
+    @patch("phanos.publisher.OutputFormatter.record_to_str")
+    def test_log_error_profiling(self, mock_rec_to_str: MagicMock, mock_publisher: MagicMock):
+        mock_rec_to_str.return_value = ""
+        records = [testing_data.test_handler_in, testing_data.test_handler_in]
+        handler = ImpProfHandler("rabbit")
+        handler.log_error_profiling("test_name", records)
+        self.assertEqual(mock_rec_to_str.call_count, 2)
+        mock_rec_to_str.assert_called_with("test_name", records[0])
+
+    def test_stream_handler(self):
         output = StringIO()
         str_handler = StreamHandler("str_handler", output)
-        str_handler.handle(testing_data.test_handler_in, "test_name")
-        str_handler.handle(testing_data.test_handler_in_no_lbl, "test_name")
+        str_handler.handle([testing_data.test_handler_in, testing_data.test_handler_in_no_lbl], "test_name")
         output.seek(0)
         self.assertEqual(
             output.read(),
             testing_data.test_handler_out + testing_data.test_handler_out_no_lbl,
         )
 
-    def test_log_handler(self):
-        tmp = sys.stdout
-        output = StringIO()
-        sys.stdout = output
+    @patch("phanos.publisher.OutputFormatter.record_to_str")
+    def test_log_handler(self, mock_rec_to_str: MagicMock):
+        mock_rec_to_str.return_value = ""
         logger = logging.getLogger()
         logger.setLevel(10)
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(10)
-        logger.addHandler(handler)
+
         log_handler = LoggerHandler("log_handler", logger)
-        log_handler.handle(testing_data.test_handler_in, "test_name")
-        output.seek(0)
-        result = output.read()
-        self.assertEqual(result, testing_data.test_handler_out)
+        self.assertEqual(log_handler.logger, logger)
+        log_handler.handle([testing_data.test_handler_in], "test_name")
+        mock_rec_to_str.assert_called_once_with("test_name", testing_data.test_handler_in)
+
+        mock_rec_to_str.reset_mock()
         log_handler = LoggerHandler("log_handler1")
         self.assertEqual(log_handler.logger.name, "PHANOS")
-        output.seek(0)
-        result = output.read()
-        self.assertEqual(result, testing_data.test_handler_out)
-        sys.stdout = tmp
+        log_handler.handle([testing_data.test_handler_in], "test_name")
+        mock_rec_to_str.assert_called_once_with("test_name", testing_data.test_handler_in)
 
-    def test_named_log_handler(self):
+    @patch("phanos.publisher.OutputFormatter.record_to_str")
+    def test_named_log_handler(self, mock_rec_to_str: MagicMock):
+        mock_rec_to_str.return_value = ""
         log_handler = NamedLoggerHandler("log_handler", "logger_name")
-        phanos.profiler.add_handler(log_handler)
-        self.assertIn("log_handler", phanos.profiler.handlers)
-        self.assertIs(log_handler, phanos.profiler.handlers["log_handler"])
-        self.assertEqual(phanos.profiler.handlers["log_handler"].logger.name, "logger_name")
-        phanos.profiler.delete_handler("log_handler")
-
-    def test_handlers_management(self):
-        length = len(phanos_profiler.handlers)
-        log1 = LoggerHandler("log_handler1")
-        phanos_profiler.add_handler(log1)
-        log2 = LoggerHandler("log_handler2")
-        phanos_profiler.add_handler(log2)
-        self.assertEqual(len(phanos_profiler.handlers), length + 2)
-        phanos_profiler.delete_handler("log_handler1")
-        self.assertEqual(phanos_profiler.handlers.get("log_handler1"), None)
-        phanos_profiler.delete_handlers()
-        self.assertEqual(phanos_profiler.handlers, {})
-
-        self.assertRaises(KeyError, phanos_profiler.delete_handler, "nonexistent")
-
-        handler1 = StreamHandler("handler")
-        handler2 = StreamHandler("handler")
-        phanos_profiler.add_handler(handler1)
-        self.assertEqual(handler1, phanos_profiler.handlers["handler"])
-        phanos_profiler.add_handler(handler2)
-        self.assertEqual(handler2, phanos_profiler.handlers["handler"])
-
-    def test_rabbit_handler_connection(self):
-        self.assertRaises(RuntimeError, ImpProfHandler, "handle")
-
-    def test_rabbit_handler_publish(self):
-        with patch("phanos.publisher.BlockingPublisher") as test_publisher:
-            handler = ImpProfHandler("rabbit")
-            test_publisher.assert_called()
-            # noinspection PyDunderSlots,PyUnresolvedReferences
-            test_publish = handler.publisher.publish = MagicMock(return_value=3)
-
-            handler.handle(profiler_name="name", records=testing_data.test_handler_in)
-            test_publish.assert_called()
+        self.assertEqual(log_handler.logger.name, "logger_name")
+        log_handler.handle([testing_data.test_handler_in], "test_name")
+        mock_rec_to_str.assert_called_once_with("test_name", testing_data.test_handler_in)

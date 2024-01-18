@@ -1,176 +1,210 @@
+import datetime
 import unittest
+from unittest.mock import Mock, patch, MagicMock
 
-from src.phanos.metrics import Histogram, Summary, Counter, Info, Gauge, Enum
-from test import testing_data
+from src.phanos.metrics import (
+    Histogram,
+    Summary,
+    Counter,
+    Info,
+    Gauge,
+    Enum,
+    MetricWrapper,
+    StoreOperationDecorator,
+    TimeProfiler,
+    ResponseSize,
+)
+
+
+class TestStoreOperationDecorator(unittest.TestCase):
+    def setUp(self):
+        self.operation_mock = Mock()
+        self.operation_mock.__qualname__ = "mocked_method"
+
+    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
+    def test_successful_execution(self):
+        # Create an instance of MetricWrapper
+        metric_instance = MetricWrapper("test_metric", "TEST", "V", ["error_raised"])
+        metric_instance.values = [("observe", 1)]
+
+        # Apply the decorator to a test function
+        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+        decorated_function(metric_instance, value=42)
+
+        # Assert that the operation method was called with the correct arguments
+        self.operation_mock.assert_called_once_with(metric_instance, 42, {"error_raised": False})
+
+        # Assert that the values, label_values, and method lists are updated
+        self.assertEqual(metric_instance.values, [("observe", 1)])
+        self.assertEqual(metric_instance.label_values, [{"error_raised": False}])
+        self.assertEqual(metric_instance.method, ["mocked_value"])
+
+    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
+    def test_invalid_labels(self):
+        # Create an instance of MetricWrapper
+        metric_instance = MetricWrapper("test_metric", "TEST", "V", ["label1", "label2"])
+        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+        with self.assertRaises(ValueError):
+            decorated_function(metric_instance, value=42, label_values={"invalid_label": "value"})
+
+    @patch(
+        "src.phanos.metrics.curr_node",
+        Mock(get=Mock(side_effect=LookupError)),
+    )
+    def test_ctx_not_found(self):
+        metric_instance = MetricWrapper("test_metric", "TEST", "V")
+        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+        with self.assertRaises(AttributeError):
+            decorated_function(metric_instance, value=42)
+            self.assertEqual(len(metric_instance.method), 0)
+            self.assertEqual(len(metric_instance.label_values), 0)
+
+    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
+    def test_operation_not_stored(self):
+        metric_instance = MetricWrapper("test_metric", "TEST", "V")
+        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+        with self.assertRaises(ValueError):
+            decorated_function(metric_instance, value=42)
 
 
 class TestMetrics(unittest.TestCase):
+    def setUp(self):
+        self.tmp = StoreOperationDecorator.wrapper
+        # monkey patch StoreOperationDecorator.wrapper to just call desired operation
+        # I didn't find out another way how to test this
+        StoreOperationDecorator.wrapper = lambda self_, *args, **kwargs: self_.operation(*args, **kwargs)
+
+    def tearDown(self):
+        StoreOperationDecorator.wrapper = self.tmp
+
+    def test_metric_wrapper(self):
+        metric = MetricWrapper("test_metric", "TEST", "V", ["test", "test2"])
+
+        metric.method = ["X:y", "X:z"]
+        metric.values = [("observe", 1), ("observe", 2)]
+        metric.label_values = [{"test": "test", "test2": "test2"}, {"test": "test", "test2": "test2"}]
+        with self.subTest("TO RECORDS VALID"):
+            metric.metric = "histogram"
+            r = metric.to_records()
+            self.assertEqual(len(r), 2)
+            self.assertEqual(r[0]["item"], "X")
+            self.assertEqual(r[0]["method"], "X:y")
+            self.assertEqual(r[0]["value"], ("observe", 1))
+            self.assertEqual(r[0]["labels"], {"test": "test", "test2": "test2"})
+
+        metric.method = metric.method[:1]
+        with self.subTest("TO RECORDS INVALID"):
+            with self.assertRaises(RuntimeError):
+                _ = metric.to_records()
+
+        with self.subTest("CHECK LABELS"):
+            self.assertTrue(metric.check_labels(["test", "test2"]))
+            self.assertFalse(metric.check_labels(["test", "invalid"]))
+
+        with self.subTest("CLEANUP"):
+            metric.cleanup()
+            self.assertEqual(metric.method, [])
+            self.assertEqual(metric.values, [])
+            self.assertEqual(metric.label_values, [])
+
     def test_histogram(self):
-        hist_no_lbl = Histogram(
+        hist = Histogram(
             "hist_no_lbl",
             "TEST",
             "V",
         )
-        # invalid label
-        self.assertRaises(
-            ValueError,
-            hist_no_lbl.observe,
-            2.0,
-            label_values={"nonexistent": "123"},
-        )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            hist_no_lbl.observe,
-            "asd",
-        )
-        hist_no_lbl.cleanup()
-        # valid operation
-        hist_no_lbl.observe(2.0, None),
-        self.assertEqual(hist_no_lbl.to_records(), testing_data.hist_no_lbl)
-
-        hist_w_lbl = Histogram("hist_w_lbl", "TEST", "V", labels=["test"])
-
-        # missing label
-        self.assertRaises(
-            ValueError,
-            hist_w_lbl.observe,
-            2.0,
-        )
-        hist_w_lbl.cleanup()
-        # default operation
-        hist_w_lbl.observe(2.0, {"test": "test"})
-        self.assertEqual(hist_w_lbl.to_records(), testing_data.hist_w_lbl)
+        self.assertEqual(hist.metric, "histogram")
+        with self.assertRaises(TypeError):
+            hist.observe("asd", None)
+        hist.observe(2.0, None)
+        self.assertEqual(hist.values, [("observe", 2.0)])
 
     def test_summary(self):
-        sum_no_lbl = Summary("sum_no_lbl", "TEST", "V")
-        # invalid label
-        self.assertRaises(
-            ValueError,
-            sum_no_lbl.observe,
-            2.0,
-            {"nonexistent": "123"},
+        sum_ = Summary(
+            "hist_no_lbl",
+            "TEST",
+            "V",
         )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            sum_no_lbl.observe,
-            "asd",
-        )
-        sum_no_lbl.cleanup()
-        # valid operation
-        sum_no_lbl.observe(2.0, None),
-        self.assertEqual(sum_no_lbl.to_records(), testing_data.sum_no_lbl)
+        self.assertEqual(sum_.metric, "summary")
+        with self.assertRaises(TypeError):
+            sum_.observe("asd", None)
+        sum_.observe(2.0, None)
+        self.assertEqual(sum_.values, [("observe", 2.0)])
 
     def test_counter(self):
-        cnt_no_lbl = Counter(
-            "cnt_no_lbl",
+        cnt = Counter(
+            "hist_no_lbl",
             "TEST",
             "V",
         )
-        # invalid label
-        self.assertRaises(
-            ValueError,
-            cnt_no_lbl.inc,
-            2.0,
-            label_values={"nonexistent": "123"},
-        )
-        # invalid value type
-        self.assertRaises(
-            TypeError,
-            cnt_no_lbl.inc,
-            "asd",
-        )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            cnt_no_lbl.inc,
-            -1,
-        )
-        cnt_no_lbl.cleanup()
-
-        # valid operation
-        cnt_no_lbl.inc(2.0, None),
-        self.assertEqual(cnt_no_lbl.to_records(), testing_data.cnt_no_lbl)
+        self.assertEqual(cnt.metric, "counter")
+        with self.assertRaises(TypeError):
+            cnt.inc("asd", None)
+        cnt.inc(2.0, None)
+        self.assertEqual(cnt.values, [("inc", 2.0)])
 
     def test_info(self):
-        inf_no_lbl = Info(
-            "inf_no_lbl",
+        inf = Info(
+            "hist_no_lbl",
             "TEST",
         )
-        # invalid value type
-        self.assertRaises(
-            ValueError,
-            inf_no_lbl.info_,
-            "asd",
-        )
-        inf_no_lbl.cleanup()
-        # valid operation
-        inf_no_lbl.info_({"value": "asd"}, None),
-        self.assertEqual(inf_no_lbl.to_records(), testing_data.inf_no_lbl)
+        self.assertEqual(inf.metric, "info")
+        self.assertEqual(inf.units, "info")
+        with self.assertRaises(TypeError):
+            inf.info_("asd", None)
+        inf.info_({"x": "y"}, None)
+        self.assertEqual(inf.values, [("info", {"x": "y"})])
 
     def test_gauge(self):
-        gauge_no_lbl = Gauge(
-            "gauge_no_lbl",
+        g = Gauge(
+            "hist_no_lbl",
             "TEST",
             "V",
         )
-        # invalid label
-        self.assertRaises(
-            ValueError,
-            gauge_no_lbl.inc,
-            2.0,
-            label_values={"nonexistent": "123"},
-        )
-        # invalid value type
-        self.assertRaises(
-            TypeError,
-            gauge_no_lbl.inc,
-            "asd",
-        )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            gauge_no_lbl.inc,
-            -1,
-        )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            gauge_no_lbl.dec,
-            -1,
-        )
-        # invalid value
-        self.assertRaises(
-            TypeError,
-            gauge_no_lbl.set,
-            False,
-        )
-        gauge_no_lbl.cleanup()
-        # valid operation
-        gauge_no_lbl.inc(2.0, None),
-        gauge_no_lbl.dec(2.0, None),
-        gauge_no_lbl.set(2.0, None),
-        self.assertEqual(gauge_no_lbl.to_records(), testing_data.gauge_no_lbl)
+        self.assertEqual(g.metric, "gauge")
+        with self.assertRaises(TypeError):
+            g.inc("asd", None)
+        with self.assertRaises(TypeError):
+            g.inc(-1.2, None)
+        g.inc(2.0, None)
+        self.assertEqual(g.values, [("inc", 2.0)])
+        g.values = []
+
+        with self.assertRaises(TypeError):
+            g.dec("asd", None)
+        with self.assertRaises(TypeError):
+            g.dec(-1.2, None)
+        g.dec(2.0, None)
+        self.assertEqual(g.values, [("dec", 2.0)])
+        g.values.clear()
+
+        with self.assertRaises(TypeError):
+            g.set("set", None)
+        g.set(2.0, None)
+        self.assertEqual(g.values, [("set", 2.0)])
+        g.values.clear()
 
     def test_enum(self):
-        enum_no_lbl = Enum(
-            "enum_no_lbl",
+        enum = Enum(
+            "hist_no_lbl",
             "TEST",
-            ["true", "false"],
+            ["x", "y"],
         )
-        # invalid value
-        self.assertRaises(
-            ValueError,
-            enum_no_lbl.state,
-            "maybe",
-        )
+        self.assertEqual(enum.metric, "enum")
+        self.assertEqual(enum.units, "enum")
+        with self.assertRaises(TypeError):
+            enum.state("asd", None)
+        enum.state("x", None)
+        self.assertEqual(enum.values, [("state", "x")])
 
-        enum_no_lbl.cleanup()
-        # valid operation
-        enum_no_lbl.state("true", None)
-        self.assertEqual(enum_no_lbl.to_records(), testing_data.enum_no_lbl)
+    @patch("src.phanos.metrics.Histogram.observe")
+    def test_time_profiler(self, mock_observe: MagicMock):
+        time = TimeProfiler("test", "TEST")
+        time.stop(datetime.datetime.now(), {})
+        self.assertEqual(mock_observe.call_count, 1)
 
-        enum_no_lbl.state("true", None)
-        enum_no_lbl.values.pop(0)
-        self.assertRaises(RuntimeError, enum_no_lbl.to_records)
+    @patch("src.phanos.metrics.Histogram.observe")
+    def test_response_size(self, mock_observe: MagicMock):
+        time = ResponseSize("test", "TEST")
+        time.rec("asd", {})
+        self.assertEqual(mock_observe.call_count, 1)

@@ -36,8 +36,9 @@ class Context:
     value: str
 
     def __init__(self, method: typing.Optional[typing.Callable] = None) -> None:
-        """Stores method amd set initial context value and top_module
-        :param method: method of MethodTreeNode object
+        """Stores method and set initial context value and top_module
+
+        :param method: Any Callable, must be passed. self.method=None is reserved for root node
         """
         self.method = method
         if method:
@@ -102,7 +103,8 @@ class ContextTree(log.InstanceLoggerMixin):
         self.root = MethodTreeNode(logger=self.logger)
 
     def delete_node(self, node: MethodTreeNode) -> None:
-        """Clears all references for specified node and delete it
+        """Clears all references for specified node in tree and delete it,
+        modify tree, so that all children of deleted node are moved to parent of deleted node
 
         :param node: node which should be deleted
         """
@@ -119,7 +121,7 @@ class ContextTree(log.InstanceLoggerMixin):
             node.parent = None
             self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
             del node
-        except ValueError:
+        except ValueError:  # ???
             pass
 
     def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> bool:
@@ -195,16 +197,3 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         self.children.append(child)
         self.debug(f"{self.add_child.__qualname__}: node {self.ctx!r} added child: {child.ctx!r}")
         return child
-
-    def delete_child(self) -> None:
-        """Delete first child of `self`.
-
-        :raises IndexError: If `self.children` is empty
-        """
-        try:
-            child = self.children.pop(0)
-            child.parent = None
-            del child
-            self.debug(f"{self.delete_child.__qualname__}: node {self.ctx!r} deleted child: {self.ctx!r}")
-        except IndexError:
-            self.debug(f"{self.delete_child.__qualname__}: node {self.ctx!r} do not have any children")

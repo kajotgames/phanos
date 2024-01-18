@@ -25,7 +25,19 @@ def test_list_comp():
     _ = [test_inside_list_comp() for _ in range(1)]
 
 
+@profile
+def test_decorator(func):
+    @profile
+    def inner(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return inner
+
+
 class DummyDbAccess:
+    def __init__(self):
+        pass
+
     @staticmethod
     def test_static():
         pass
@@ -54,6 +66,15 @@ class DummyDbAccess:
     def raise_access(self):
         self.first_access()
         raise RuntimeError()
+
+    # TODO: decorator work with properties
+    @property
+    def test_prop(self):
+        return self.test_prop
+
+    @test_prop.setter
+    def test_prop(self, value):
+        self.test_prop = value
 
 
 class AsyncTest:

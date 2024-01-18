@@ -7,6 +7,7 @@ import sys
 import unittest
 from os.path import join, dirname
 
+import test_messaging
 
 src_path = join(join(dirname(__file__), ".."), "")
 if src_path not in sys.path:
@@ -19,12 +20,17 @@ if __name__ == "__main__":
     from test import test_tree, test_handlers, test_metrics, test_config, test_async, test_sync
 
     test_classes = [
-        test_tree.TestTree,
-        test_handlers.TestHandlers,
-        test_metrics.TestMetrics,
         test_sync.TestProfiling,
-        test_config.TestConfig,
         test_async.TestAsyncProfile,
+        test_tree.TestContextTree,
+        test_tree.TestContext,
+        test_tree.TestMethodTreeNode,
+        test_config.TestConfig,
+        test_handlers.TestOutputFormatter,
+        test_handlers.TestHandlers,
+        test_metrics.TestStoreOperationDecorator,
+        test_metrics.TestMetrics,
+        test_messaging.TestMessaging,
     ]
     loader = unittest.TestLoader()
     class_suites = []
