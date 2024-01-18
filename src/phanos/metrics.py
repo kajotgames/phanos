@@ -16,7 +16,6 @@ class MetricWrapper(log.InstanceLoggerMixin):
     """Wrapper around all Prometheus metric types"""
 
     name: str
-    item: typing.List[str]
     method: typing.List[str]
     job: str
     metric: str
@@ -43,7 +42,6 @@ class MetricWrapper(log.InstanceLoggerMixin):
         :param labels: label_names of metric viz. Type Record
         """
         self.name = name
-        self.item = []
         self.units = units
         self.values = []
         self.method = []
@@ -65,14 +63,13 @@ class MetricWrapper(log.InstanceLoggerMixin):
             self.error(f"{self.to_records.__qualname__}: one of records missing method || value || label_values")
             raise RuntimeError(f"{len(self.method)}, {len(self.values)}, {len(self.label_values)}")
         for i in range(len(self.values)):
-            label_value = self.label_values[i] if self.label_values is not None else {}
             record: Record = {
                 "item": self.method[i].split(":")[0],
                 "metric": self.metric,
                 "units": self.units,
                 "job": self.job,
                 "method": self.method[i],
-                "labels": label_value,
+                "labels": self.label_values[i],
                 "value": self.values[i],
             }
             records.append(record)
@@ -91,17 +88,12 @@ class MetricWrapper(log.InstanceLoggerMixin):
     def cleanup(self) -> None:
         """Cleanup after all records was sent
 
-        Clears metrics `self.values`, `self.label_values`, `self.method` and `self.item`
+        Clears metrics `self.values`, `self.label_values`, `self.method`
         `self.job` and `self.units` are same during whole existence of metric instance
         """
-        if self.values is not None:
-            self.values.clear()
-        if self.label_values is not None:
-            self.label_values.clear()
-        if self.method is not None:
-            self.method.clear()
-        if self.item is not None:
-            self.item.clear()
+        self.values.clear()
+        self.label_values.clear()
+        self.method.clear()
         self.debug("%s: metric %s cleared", self.cleanup.__qualname__, self.name)
 
 
@@ -120,6 +112,8 @@ class StoreOperationDecorator:
     This decorator handles checking of all values that will be inserted into Record and
     calls one of metrics operation method f.e. `Counter.inc`
     """
+
+    operation: OperationCallable
 
     def __init__(self, operation: OperationCallable):
         """
@@ -172,10 +166,9 @@ class StoreOperationDecorator:
             instance.method.append(curr_node.get().ctx.value)
         except LookupError:
             instance.error(f"{self.operation.__qualname__}: cannot get context from current node")
-            instance.method.append("Missing:method")
+            raise AttributeError("Cannot get context from `curr_node")
 
         self.operation(instance, value, label_values)
-
         if not len(instance.method) == len(instance.values):
             instance.method.pop(-1)
             instance.label_values.pop(-1)
@@ -357,7 +350,7 @@ class Info(MetricWrapper):
         _ = label_values
         if not isinstance(value, dict):
             self.error(f"{self.info_.__qualname__}: accepts only dictionary values")
-            raise ValueError("Value must be dictionary")
+            raise TypeError("Value must be dictionary")
         self.values.append(("info", value))
 
 
@@ -394,7 +387,7 @@ class Gauge(MetricWrapper):
         """Method representing inc action of gauge
 
         :param value: measured value
-                :param label_values: dictionary of key:value = 'label_name':'label_value'
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises ValueError: if value is not float >= 0
         """
         _ = label_values
@@ -488,7 +481,7 @@ class Enum(MetricWrapper):
                 f"{self.state.__qualname__}: state  {value!r} not allowed for Enum {self.name!r}. "
                 f"Allowed values: {self.states!r}"
             )
-            raise ValueError("Invalid state for Enum metric")
+            raise TypeError("Invalid state for Enum metric")
         self.values.append(("state", value))
 
 
@@ -511,8 +504,6 @@ class TimeProfiler(Histogram):
         :raises RuntimeError: if start timestamps < number of stop measurement operation
         """
         super().__init__(name, job, "mS", labels, logger)
-        self.operations = {"stop": self.stop}
-        self.default_operation = "stop"
         self.debug("TimeProfiler metric initialized")
 
     # ############################### measurement operations -> checking labels, not sending records
@@ -542,8 +533,6 @@ class ResponseSize(Histogram):
         :param labels: label_names of metric viz. Type Record
         """
         super().__init__(name, job, "B", labels, logger)
-        self.operations = {"rec": self.rec}
-        self.default_operation = "rec"
         self.debug("ResponseSize metric initialized")
 
     def rec(self, value: str, label_values: typing.Dict[str, str]) -> None:
