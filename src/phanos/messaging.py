@@ -82,6 +82,7 @@ class BlockingPublisher:
         _ = kwargs
         self.logger = logger or logging.getLogger(__name__)
         self.connection = None
+        self.channel = None
         self.exchange_name = exchange_name
         self.exchange_type = exchange_type.value if isinstance(exchange_type, aio_pika.ExchangeType) else exchange_type
         self.retry = max(0, retry)
