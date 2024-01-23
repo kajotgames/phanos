@@ -6,9 +6,18 @@ this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+### Changed
+
+ - `StoreOperationDecorator` no longer raises `ValueError` when input of `operation` is not valid, 
+now it is logged as warning and record is ignored
+
 ## [0.2.2] - 2023-08-18
 
-### Modified
+### Changed
 
 - time profiler measurements have precision of two decimal places
 - records are printed in one log message instead of log per record

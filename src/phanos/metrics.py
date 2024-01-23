@@ -12,6 +12,12 @@ from .tree import curr_node
 from .types import Record, LoggerLike
 
 
+class InvalidValueError(Exception):
+    """Raised when invalid value is given to metric"""
+
+    pass
+
+
 class MetricWrapper(log.InstanceLoggerMixin):
     """Wrapper around all Prometheus metric types"""
 
@@ -52,16 +58,18 @@ class MetricWrapper(log.InstanceLoggerMixin):
         self.default_operation = ""
         super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
 
-    def to_records(self) -> typing.List[Record]:
+    def to_records(self) -> typing.Optional[typing.List[Record]]:
         """Convert measured values into Type Record
 
-        :returns: List of records
-        :raises RuntimeError: if one of records would be incomplete
+        :returns: List of records or None if any of records is incomplete
         """
         records = []
         if not len(self.method) == len(self.values) == len(self.label_values):
-            self.error(f"{self.to_records.__qualname__}: one of records missing method || value || label_values")
-            raise RuntimeError(f"{len(self.method)}, {len(self.values)}, {len(self.label_values)}")
+            self.error(
+                f"{self.to_records.__qualname__!r}: Metric {self.name!r} "
+                f"- one of records is incomplete ... skipping publishing"
+            )
+            return None
         for i in range(len(self.values)):
             record: Record = {
                 "item": self.method[i].split(":")[0],
@@ -146,9 +154,6 @@ class StoreOperationDecorator:
         :param instance:instance of basic Prometheus metric
         :param value: measured value to be inserted
         :param label_values: values of labels in format {'label_name': 'label_value'}
-        :raise ValueError: if any of label names are not known or missing, or if `self.operation`method did not
-        store any value.
-
         """
         if label_values is None:
             label_values = {}
@@ -157,22 +162,33 @@ class StoreOperationDecorator:
         labels_ok = instance.check_labels(list(label_values.keys()))
         if not labels_ok:
             instance.error(
-                f"{self.operation.__qualname__}: expected labels: {instance.label_names}, "
+                f"{self.operation.__qualname__!r}: metric {instance.name!r} expected labels: {instance.label_names}, "
                 f"labels given: {label_values.keys()}"
             )
-            raise ValueError("Unknown or missing label")
+            return
         instance.label_values.append(label_values)
         try:
             instance.method.append(curr_node.get().ctx.value)
         except LookupError:
-            instance.error(f"{self.operation.__qualname__}: cannot get context from current node")
-            raise AttributeError("Cannot get context from `curr_node")
+            instance.error(
+                f"{self.operation.__qualname__!r}: " f"metric {instance.name!r} cannot get current node from ContextVar"
+            )
+            _ = instance.label_values.pop(-1)
+            return
 
-        self.operation(instance, value, label_values)
+        try:
+            self.operation(instance, value, label_values)
+        except InvalidValueError as e:
+            instance.error(f"{self.operation.__qualname__!r}: metric {instance.name!r} accepts only values {e}")
+            _ = instance.method.pop(-1)
+            _ = instance.label_values.pop(-1)
+            return
+
         if not len(instance.method) == len(instance.values):
-            instance.method.pop(-1)
-            instance.label_values.pop(-1)
-            raise ValueError("No operation stored")
+            instance.warning(f"{self.operation.__qualname__!r}: metric {instance.name!r} did not store any value")
+            _ = instance.method.pop(-1)
+            _ = instance.label_values.pop(-1)
+            return
 
         if instance.values:
             instance.debug("%r stored value %s", instance.name, instance.values[-1])
@@ -212,12 +228,11 @@ class Histogram(MetricWrapper):
 
         :param value: measured value
         :param label_values: dictionary of labels and its values
-        :raises ValueError: if value is not float
+        :raises InvalidValueError: if value is not float
         """
         _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self.observe.__qualname__}: accepts only float values")
-            raise TypeError("Value must be float")
+            raise InvalidValueError("Float")
         self.values.append(("observe", value))
 
 
@@ -255,12 +270,11 @@ class Summary(MetricWrapper):
 
         :param value: measured value
         :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not float
+        :raises InvalidValueError: if value is not float
         """
         _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self.observe.__qualname__}: accepts only float values")
-            raise TypeError("Value must be float")
+            raise InvalidValueError("Float")
         self.values.append(("observe", value))
 
 
@@ -298,13 +312,12 @@ class Counter(MetricWrapper):
 
         :param value: measured value
         :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not float >= 0
+        :raises InvalidValueError: if value is not float >= 0
         """
 
         _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self.inc.__qualname__}: accepts only float values >= 0")
-            raise TypeError("Value must be float >= 0")
+            raise InvalidValueError("Float >= 0")
         self.values.append(("inc", value))
 
 
@@ -345,12 +358,11 @@ class Info(MetricWrapper):
 
         :param value: measured value
                 :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not dictionary
+        :raises InvalidValueError: if value is not dictionary
         """
         _ = label_values
         if not isinstance(value, dict):
-            self.error(f"{self.info_.__qualname__}: accepts only dictionary values")
-            raise TypeError("Value must be dictionary")
+            raise InvalidValueError("Dict")
         self.values.append(("info", value))
 
 
@@ -388,12 +400,11 @@ class Gauge(MetricWrapper):
 
         :param value: measured value
         :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not float >= 0
+        :raises InvalidValueError: if value is not float >= 0
         """
         _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self.inc.__qualname__}: accepts only float values >= 0")
-            raise TypeError("Value must be float >= 0")
+            raise InvalidValueError("Float >= 0")
         self.values.append(("inc", value))
 
     @StoreOperationDecorator
@@ -405,13 +416,12 @@ class Gauge(MetricWrapper):
         """Method representing dec action of gauge
 
         :param value: measured value
-                :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not float >= 0
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
+        :raises InvalidValueError: if value is not float >= 0
         """
         _ = label_values
         if not isinstance(value, float) or value < 0:
-            self.error(f"{self.dec.__qualname__}: accepts only float values >= 0")
-            raise TypeError("Value must be float >= 0")
+            raise InvalidValueError("Float >= 0")
         self.values.append(("dec", value))
 
     @StoreOperationDecorator
@@ -423,13 +433,12 @@ class Gauge(MetricWrapper):
         """Method representing set action of gauge
 
         :param value: measured value
-                :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value is not float
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
+        :raises InvalidValueError: if value is not float
         """
         _ = label_values
         if not isinstance(value, float):
-            self.error(f"{self.set.__qualname__}: accepts only float values")
-            raise TypeError("Value must be float")
+            raise InvalidValueError("Float")
         self.values.append(("set", value))
 
 
@@ -472,16 +481,12 @@ class Enum(MetricWrapper):
         """Method representing state action of enum
 
         :param value: measured value
-                :param label_values: dictionary of key:value = 'label_name':'label_value'
-        :raises ValueError: if value not in states at initialization
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
+        :raises InvalidValueError: if value not in states at initialization
         """
         _ = label_values
         if value not in self.states:
-            self.warning(
-                f"{self.state.__qualname__}: state  {value!r} not allowed for Enum {self.name!r}. "
-                f"Allowed values: {self.states!r}"
-            )
-            raise TypeError("Invalid state for Enum metric")
+            raise InvalidValueError("in {self.states}")
         self.values.append(("state", value))
 
 
@@ -501,7 +506,6 @@ class TimeProfiler(Histogram):
     ) -> None:
         """
         :param labels: label_names of metric viz. Type Record
-        :raises RuntimeError: if start timestamps < number of stop measurement operation
         """
         super().__init__(name, job, "mS", labels, logger)
         self.debug("TimeProfiler metric initialized")
