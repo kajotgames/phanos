@@ -175,12 +175,11 @@ class Profiler(log.InstanceLoggerMixin):
         try:
             _ = self.metrics.pop(item)
         except KeyError:
-            self.error(f"{self.delete_metric.__qualname__}: metric {item} do not exist")
-            raise KeyError(f"metric {item} do not exist")
-
-        if item == "time_profiler":
+            self.warning(f"{self.delete_metric.__qualname__}: metric {item} do not exist")
+            return
+        if item == TIME_PROFILER:
             self.time_profile = None
-        if item == "response_size":
+        if item == RESPONSE_SIZE:
             self.resp_size_profile = None
         self.debug(f"metric {item} deleted")
 
@@ -196,11 +195,15 @@ class Profiler(log.InstanceLoggerMixin):
                 self.delete_metric(name)
 
     def clear(self) -> None:
-        """Clear all records from all metrics and clear method tree"""
+        """Clear all records from all metrics, clear method tree and set curr_node to tree.root
+
+        do NOT use during profiling
+        """
         for metric in self.metrics.values():
             metric.cleanup()
 
         self.tree.clear()
+        curr_node.set(self.tree.root)
 
     def add_metric(self, metric: MetricWrapper) -> None:
         """Adds new metric to profiling. If metric.name == existing metric name, existing metric will be overwritten.
@@ -209,11 +212,13 @@ class Profiler(log.InstanceLoggerMixin):
         :param metric: metric instance
         """
         if self.metrics.get(metric.name, None):
-            self.warning(f"Metric {metric.name} already exist. Overwriting with new metric")
+            self.warning(
+                f"{self.add_metric.__qualname__!r}: Metric {metric.name!r} already exist. Overwriting with new metric"
+            )
         if self.error_raised_label:
             metric.label_names.append("error_raised")
         self.metrics[metric.name] = metric
-        self.debug(f"Metric {metric.name} added to phanos profiler")
+        self.debug(f"Metric {metric.name!r} added to phanos profiler")
 
     def get_records_count(self) -> int:
         """Get count of records from all metrics.
@@ -232,9 +237,11 @@ class Profiler(log.InstanceLoggerMixin):
         :param handler: handler instance
         """
         if self.handlers.get(handler.handler_name, None):
-            self.warning(f"Handler {handler.handler_name} already exist. Overwriting with new handler")
+            self.warning(
+                f"{self.add_handler.__qualname__!r}:Handler {handler.handler_name!r} already exist. Overwriting with new handler"
+            )
         self.handlers[handler.handler_name] = handler
-        self.debug(f"Handler {handler.handler_name} added to phanos profiler")
+        self.debug(f"Handler {handler.handler_name!r} added to phanos profiler")
 
     def delete_handler(self, handler_name: str) -> None:
         """Delete handler from profiler
@@ -245,9 +252,9 @@ class Profiler(log.InstanceLoggerMixin):
         try:
             _ = self.handlers.pop(handler_name)
         except KeyError:
-            self.error(f"{self.delete_handler.__qualname__}: handler {handler_name} do not exist")
-            raise KeyError(f"handler {handler_name} do not exist")
-        self.debug(f"handler {handler_name} deleted")
+            self.warning(f"{self.delete_handler.__qualname__!r}: handler {handler_name!r} do not exist")
+            return
+        self.debug(f"handler {handler_name!r} deleted")
 
     def delete_handlers(self) -> None:
         """delete all handlers"""
@@ -261,6 +268,8 @@ class Profiler(log.InstanceLoggerMixin):
         # send records and log em
         for metric in self.metrics.values():
             records = metric.to_records()
+            if not records:
+                continue
             for handler in self.handlers.values():
                 self.debug("handler %s handling metric %s", handler.handler_name, metric.name)
                 handler.handle(records, metric.name)
@@ -401,6 +410,7 @@ class Profiler(log.InstanceLoggerMixin):
                 self.debug(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
 
         else:
+            # this case should not really happen
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")
 
@@ -411,7 +421,7 @@ class Profiler(log.InstanceLoggerMixin):
     @error_raised_label.setter
     def error_raised_label(self, value: bool):
         self._error_raised_label = value
-        if not value:
+        if value is False:
             for metric in self.metrics.values():
                 try:
                     _ = metric.label_names.remove("error_raised")
