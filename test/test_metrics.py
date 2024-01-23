@@ -13,6 +13,7 @@ from src.phanos.metrics import (
     StoreOperationDecorator,
     TimeProfiler,
     ResponseSize,
+    InvalidValueError,
 )
 
 
@@ -44,27 +45,40 @@ class TestStoreOperationDecorator(unittest.TestCase):
         # Create an instance of MetricWrapper
         metric_instance = MetricWrapper("test_metric", "TEST", "V", ["label1", "label2"])
         decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        with self.assertRaises(ValueError):
-            decorated_function(metric_instance, value=42, label_values={"invalid_label": "value"})
+        decorated_function(metric_instance, value=42, label_values={"invalid_label": "value"})
+        self.assertEqual(len(metric_instance.label_values), 0)
+        self.assertEqual(len(metric_instance.values), 0)
+        self.assertEqual(len(metric_instance.method), 0)
 
-    @patch(
-        "src.phanos.metrics.curr_node",
-        Mock(get=Mock(side_effect=LookupError)),
-    )
+    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(side_effect=LookupError)))
     def test_ctx_not_found(self):
         metric_instance = MetricWrapper("test_metric", "TEST", "V")
         decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        with self.assertRaises(AttributeError):
-            decorated_function(metric_instance, value=42)
-            self.assertEqual(len(metric_instance.method), 0)
-            self.assertEqual(len(metric_instance.label_values), 0)
+        decorated_function(metric_instance, value=42)
+        self.assertEqual(len(metric_instance.label_values), 0)
+        self.assertEqual(len(metric_instance.method), 0)
+        self.assertEqual(len(metric_instance.values), 0)
+
+    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
+    def test_operation_raised(self):
+        metric_instance = MetricWrapper("test_metric", "TEST", "V")
+        self.operation_mock.side_effect = InvalidValueError("Float")
+        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+        decorated_function(metric_instance, value=42)
+        self.assertEqual(len(metric_instance.label_values), 0)
+        self.assertEqual(len(metric_instance.method), 0)
+        self.assertEqual(len(metric_instance.values), 0)
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_operation_not_stored(self):
         metric_instance = MetricWrapper("test_metric", "TEST", "V")
         decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        with self.assertRaises(ValueError):
-            decorated_function(metric_instance, value=42)
+        decorated_function(metric_instance, value=42)
+
+        # assert that last `label_value` and `method` was cleared
+        self.assertEqual(len(metric_instance.label_values), 0)
+        self.assertEqual(len(metric_instance.method), 0)
+        self.assertEqual(len(metric_instance.values), 0)
 
 
 class TestMetrics(unittest.TestCase):
@@ -94,8 +108,8 @@ class TestMetrics(unittest.TestCase):
 
         metric.method = metric.method[:1]
         with self.subTest("TO RECORDS INVALID"):
-            with self.assertRaises(RuntimeError):
-                _ = metric.to_records()
+            r = metric.to_records()
+            self.assertIsNone(r)
 
         with self.subTest("CHECK LABELS"):
             self.assertTrue(metric.check_labels(["test", "test2"]))
@@ -114,7 +128,7 @@ class TestMetrics(unittest.TestCase):
             "V",
         )
         self.assertEqual(hist.metric, "histogram")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             hist.observe("asd", None)
         hist.observe(2.0, None)
         self.assertEqual(hist.values, [("observe", 2.0)])
@@ -126,7 +140,7 @@ class TestMetrics(unittest.TestCase):
             "V",
         )
         self.assertEqual(sum_.metric, "summary")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             sum_.observe("asd", None)
         sum_.observe(2.0, None)
         self.assertEqual(sum_.values, [("observe", 2.0)])
@@ -138,7 +152,7 @@ class TestMetrics(unittest.TestCase):
             "V",
         )
         self.assertEqual(cnt.metric, "counter")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             cnt.inc("asd", None)
         cnt.inc(2.0, None)
         self.assertEqual(cnt.values, [("inc", 2.0)])
@@ -150,7 +164,7 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(inf.metric, "info")
         self.assertEqual(inf.units, "info")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             inf.info_("asd", None)
         inf.info_({"x": "y"}, None)
         self.assertEqual(inf.values, [("info", {"x": "y"})])
@@ -162,23 +176,23 @@ class TestMetrics(unittest.TestCase):
             "V",
         )
         self.assertEqual(g.metric, "gauge")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             g.inc("asd", None)
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             g.inc(-1.2, None)
         g.inc(2.0, None)
         self.assertEqual(g.values, [("inc", 2.0)])
         g.values = []
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             g.dec("asd", None)
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             g.dec(-1.2, None)
         g.dec(2.0, None)
         self.assertEqual(g.values, [("dec", 2.0)])
         g.values.clear()
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             g.set("set", None)
         g.set(2.0, None)
         self.assertEqual(g.values, [("set", 2.0)])
@@ -192,7 +206,7 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(enum.metric, "enum")
         self.assertEqual(enum.units, "enum")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(InvalidValueError):
             enum.state("asd", None)
         enum.state("x", None)
         self.assertEqual(enum.values, [("state", "x")])

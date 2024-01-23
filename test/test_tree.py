@@ -26,8 +26,13 @@ class TestContext(unittest.TestCase):
         self.assertEqual(repr(ctx), "")
 
     def test_prepend_method_class(self):
-        with self.subTest("METHOD"):
+        with self.subTest("METHOD FROM CLASS"):
             ctx = tree.Context(dummy_api.DummyDbAccess.test_method)
+            ctx.prepend_method_class()
+            self.assertEqual(ctx.value, "DummyDbAccess:test_method")
+
+        with self.subTest("METHOD FROM CLASS INSTANCE"):
+            ctx = tree.Context(dummy_api.DummyDbAccess().test_method)
             ctx.prepend_method_class()
             self.assertEqual(ctx.value, "DummyDbAccess:test_method")
 
@@ -143,4 +148,5 @@ class TestContextTree(unittest.TestCase):
         node.add_child(child2)
 
         ctx_tree.clear()
-        self.assertEqual(mock_delete_node.call_count, 4)
+        self.assertEqual(mock_delete_node.call_count, 3)
+        self.assertIsNotNone(ctx_tree.root)

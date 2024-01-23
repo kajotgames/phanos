@@ -7,17 +7,24 @@ import sys
 import unittest
 from os.path import join, dirname
 
-import test_messaging
-
 src_path = join(join(dirname(__file__), ".."), "")
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
 if __name__ == "__main__":
-    cov = coverage.Coverage(omit=["*/test/*"])
+    cov = coverage.Coverage(omit=["*/test/*", "*/log.py"])
     cov.start()
     # import after cov.start() due to correct coverage report
-    from test import test_tree, test_handlers, test_metrics, test_config, test_async, test_sync
+    from test import (
+        test_tree,
+        test_handlers,
+        test_metrics,
+        test_config,
+        test_async,
+        test_sync,
+        test_messaging,
+        test_publisher,
+    )
 
     test_classes = [
         test_sync.TestProfiling,
@@ -31,6 +38,7 @@ if __name__ == "__main__":
         test_metrics.TestStoreOperationDecorator,
         test_metrics.TestMetrics,
         test_messaging.TestMessaging,
+        test_publisher.TestProfiler,
     ]
     loader = unittest.TestLoader()
     class_suites = []

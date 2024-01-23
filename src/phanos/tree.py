@@ -59,9 +59,9 @@ class Context:
         """
         Gets owner(class or module) name where `self.method` was defined and prepend it to current `self.value`.
 
-        CANNOT DO: partial, lambda
+        CANNOT DO: partial, lambda, property
 
-        Can do: rest
+        Can do:  method, classmethod, staticmethod, decorator, descriptor
         """
         meth = self.method
         if inspect.ismethod(meth):
@@ -111,18 +111,15 @@ class ContextTree(log.InstanceLoggerMixin):
         node_parent: typing.Optional[MethodTreeNode] = None
         if node.parent:
             node_parent = node.parent()
-        try:
-            if isinstance(node_parent, MethodTreeNode):
-                node_parent.children.remove(node)
-                node_parent.children.extend(node.children)
-            for child_to_move in node.children:
-                child_to_move.parent = node.parent
-            node.children = []
-            node.parent = None
-            self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
-            del node
-        except ValueError:  # ???
-            pass
+        if isinstance(node_parent, MethodTreeNode):
+            node_parent.children.remove(node)
+            node_parent.children.extend(node.children)
+        for child_to_move in node.children:
+            child_to_move.parent = node.parent
+        node.children = []
+        node.parent = None
+        self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
+        del node
 
     def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> bool:
         """Deletes one node from ContextTree. if param `root` is passed, tree will be searched from this node
@@ -144,16 +141,20 @@ class ContextTree(log.InstanceLoggerMixin):
         return False
 
     def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
-        """Deletes whole subtree starting from param root. If param root is not passed, `self.root` is used
+        """Deletes whole subtree starting from param `root`. If param root is not passed, `self.root` is used
+
+        If root == self.root, then self.root is kept. otherwise root is deleted
 
         :param root: Node from which to start deleting tree.
         """
         if root is None:
             root = self.root
+
         for child in root.children:
             self.clear(child)
-        self.delete_node(root)
-        self.debug(f"{self.clear.__qualname__}: tree cleared")
+
+        if not root == self.root:
+            self.delete_node(root)
 
 
 class MethodTreeNode(log.InstanceLoggerMixin):

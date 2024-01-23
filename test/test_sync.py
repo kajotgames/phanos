@@ -38,49 +38,6 @@ class TestProfiling(unittest.TestCase):
         phanos_profiler.error_raised_label = False
         self.output.close()
 
-    def test_metric_management(self):
-        length = len(phanos_profiler.metrics)
-        # create metrics
-        hist = Histogram("name", "TEST", "units")
-        phanos_profiler.add_metric(hist)
-        hist1 = Histogram("name1", "TEST", "units")
-        phanos_profiler.add_metric(hist1)
-        self.assertEqual(len(phanos_profiler.metrics), length + 2)
-        # delete metric
-        phanos_profiler.delete_metric("name")
-        self.assertEqual(len(phanos_profiler.metrics), length + 1)
-        self.assertEqual(phanos_profiler.metrics.get("name"), None)
-        # delete time_profiling metric
-        phanos_profiler.delete_metric(publisher.TIME_PROFILER)
-        self.assertEqual(phanos_profiler.metrics.get(publisher.TIME_PROFILER), None)
-        self.assertEqual(phanos_profiler.time_profile, None)
-        # delete response size metric
-        phanos_profiler.delete_metric(publisher.RESPONSE_SIZE)
-        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
-        self.assertEqual(phanos_profiler.resp_size_profile, None)
-        # create response size metric
-        phanos_profiler.create_response_size_profiler()
-        self.assertIsNotNone(phanos_profiler.resp_size_profile)
-        self.assertEqual(len(phanos_profiler.metrics), 2)
-
-        # delete all metrics (without response size and time profiling metrics)
-        phanos_profiler.delete_metrics()
-        self.assertEqual(len(phanos_profiler.metrics), 1)
-        self.assertIsNotNone(phanos_profiler.resp_size_profile, None)
-        self.assertIsNotNone(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE))
-        phanos_profiler.delete_metrics(rm_time_profile=True, rm_resp_size_profile=True)
-        self.assertEqual(phanos_profiler.metrics, {})
-        self.assertEqual(phanos_profiler.metrics.get(publisher.RESPONSE_SIZE), None)
-
-        self.assertRaises(KeyError, phanos_profiler.delete_metric, "nonexistent")
-
-        metric1 = Histogram("hist", "TEST", "xz")
-        metric2 = Histogram("hist", "TEST", "xz")
-        phanos_profiler.add_metric(metric1)
-        self.assertEqual(metric1, phanos_profiler.metrics["hist"])
-        phanos_profiler.add_metric(metric2)
-        self.assertEqual(metric2, phanos_profiler.metrics["hist"])
-
     def test_profiling(self):
         # do not handle records
         phanos_profiler.handle_records = False
