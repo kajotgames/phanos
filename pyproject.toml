@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phanos"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
   { name="Miroslav Bulička", email="bulickamiroslav@gmail.com" },
 ]
@@ -26,6 +26,17 @@ dependencies = [
     "aio_pika>=9.2",
     "orjson>=3.9",
     ]
+
+[tool.hatch]
+directory = "src"
+name = "phanos"
+
+[tool.coverage.run]
+branch = true
+source = "phanos"
+
+[tool.coverage.paths]
+source = ["src"]
 
 [project.urls]
 "Homepage" = "https://github.com/kajotgames/phanos"
