@@ -263,7 +263,7 @@ class Profiler(log.InstanceLoggerMixin):
 
     def handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
-        This method DO NOT clear MethodContext tree
+        This method DOES NOT clear MethodContext tree
         """
         # send records and log em
         for metric in self.metrics.values():
@@ -278,7 +278,7 @@ class Profiler(log.InstanceLoggerMixin):
     def force_handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
 
-        As side effect clears all metrics and DO CLEAR MethodContext tree
+        As side effect clears all metrics and DOES CLEAR MethodContext tree
         """
         # send records and log em
         self.debug("Forcing record handling")

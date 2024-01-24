@@ -9,4 +9,3 @@ twine>=4.0
 build>=0.10
 mypy
 pylint
-coverage
