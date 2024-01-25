@@ -163,7 +163,6 @@ Implement these methods with all needed measurement.
 
 ```python
 import typing
-import phanos.tree
 import phanos
 
 
@@ -174,7 +173,7 @@ class CustomMetric(phanos.metrics.Counter):
     # custom initialization
     self.count = 0
 
-  def custom_op(self, value: int = 0, label_values: typing.Optional[typing.Dict[str,str]] = None):
+  def custom_op(self, value: int = 0, label_values: typing.Optional[typing.Dict[str, str]] = None):
     self.count += value
     self.inc(self.count, label_values)
 
@@ -186,12 +185,12 @@ class CustomMetric(phanos.metrics.Counter):
     self.count = 0
 
 
-my_metric = CustomMetric(name="name", job="MyJob", units="units", labels=["label_name"])
+my_metric = CustomMetric(name="name", job="MyJob", units="units", labels={"label_name"})
 
 
 def before_function(func, args, kwargs):
   # this operation will be recorded
-  my_metric.custom_op(2,{"label_name": "label_value"})
+  my_metric.custom_op(2, {"label_name": "label_value"})
   # this won't be recorded
   my_metric.helper_method()
 

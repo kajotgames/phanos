@@ -4,7 +4,6 @@ import weakref
 from unittest.mock import patch, MagicMock
 
 from phanos import tree
-from src.phanos import phanos_profiler
 from src.phanos.tree import MethodTreeNode, ContextTree
 from test import dummy_api
 
@@ -19,11 +18,11 @@ class TestContext(unittest.TestCase):
     def test_str_and_repr(self):
         ctx = tree.Context(dummy_api.DummyDbAccess.test_method)
         self.assertEqual(str(ctx), "test_method")
-        self.assertEqual(repr(ctx), "test_method")
+        self.assertEqual(repr(ctx), "'test_method'")
 
         ctx = tree.Context()
         self.assertEqual(str(ctx), "")
-        self.assertEqual(repr(ctx), "")
+        self.assertEqual(repr(ctx), "''")
 
     def test_prepend_method_class(self):
         with self.subTest("METHOD FROM CLASS"):
@@ -78,7 +77,7 @@ class TestMethodTreeNode(unittest.TestCase):
             node = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
             root.add_child(node)
             self.assertEqual(root.children, [node])
-            self.assertEqual(node.parent, weakref.ReferenceType(root))
+            self.assertEqual(node.parent, root)
             self.assertEqual(node.ctx.value, "DummyDbAccess:test_method")
 
         with self.subTest("CHILD ADD CHILD"):
@@ -88,7 +87,7 @@ class TestMethodTreeNode(unittest.TestCase):
             node2 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
             node.add_child(node2)
             self.assertEqual(node.children, [node2])
-            self.assertEqual(node2.parent, weakref.ReferenceType(node))
+            self.assertEqual(node2.parent, node)
             self.assertEqual(node2.ctx.value, "DummyDbAccess:test_method.test_method")
 
 
@@ -114,8 +113,8 @@ class TestContextTree(unittest.TestCase):
         ctx_tree.delete_node(node)
 
         self.assertEqual(ctx_tree.root.children, [child1, child2])
-        self.assertEqual(child1.parent, weakref.ReferenceType(ctx_tree.root))
-        self.assertEqual(child2.parent, weakref.ReferenceType(ctx_tree.root))
+        self.assertEqual(child1.parent, ctx_tree.root)
+        self.assertEqual(child2.parent, ctx_tree.root)
         self.assertEqual(sys.getrefcount(node) - 1, 1)
         self.assertEqual(weakref.getweakrefcount(node), 0)
 
@@ -135,6 +134,11 @@ class TestContextTree(unittest.TestCase):
         with self.subTest("NOT FOUND"):
             not_in_tree = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
             self.assertFalse(ctx_tree.find_and_delete_node(not_in_tree))
+
+        mock_delete_node.reset_mock()
+        with self.subTest("ROOT"):
+            self.assertFalse(ctx_tree.find_and_delete_node(ctx_tree.root))
+            self.assertEqual(mock_delete_node.call_count, 0)
 
     @patch("src.phanos.tree.ContextTree.delete_node")
     def test_clear_tree(self, mock_delete_node: MagicMock):

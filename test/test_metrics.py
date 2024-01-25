@@ -25,7 +25,7 @@ class TestStoreOperationDecorator(unittest.TestCase):
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_successful_execution(self):
         # Create an instance of MetricWrapper
-        metric_instance = MetricWrapper("test_metric", "TEST", "V", ["error_raised"])
+        metric_instance = MetricWrapper("test_metric", "TEST", "V", {"error_raised"})
         metric_instance.values = [("observe", 1)]
 
         # Apply the decorator to a test function
@@ -43,7 +43,7 @@ class TestStoreOperationDecorator(unittest.TestCase):
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_invalid_labels(self):
         # Create an instance of MetricWrapper
-        metric_instance = MetricWrapper("test_metric", "TEST", "V", ["label1", "label2"])
+        metric_instance = MetricWrapper("test_metric", "TEST", "V", {"label1", "label2"})
         decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
         decorated_function(metric_instance, value=42, label_values={"invalid_label": "value"})
         self.assertEqual(len(metric_instance.label_values), 0)
@@ -92,7 +92,7 @@ class TestMetrics(unittest.TestCase):
         StoreOperationDecorator.wrapper = self.tmp
 
     def test_metric_wrapper(self):
-        metric = MetricWrapper("test_metric", "TEST", "V", ["test", "test2"])
+        metric = MetricWrapper("test_metric", "TEST", "V", {"test", "test2"})
 
         metric.method = ["X:y", "X:z"]
         metric.values = [("observe", 1), ("observe", 2)]
@@ -112,8 +112,8 @@ class TestMetrics(unittest.TestCase):
             self.assertIsNone(r)
 
         with self.subTest("CHECK LABELS"):
-            self.assertTrue(metric.check_labels(["test", "test2"]))
-            self.assertFalse(metric.check_labels(["test", "invalid"]))
+            self.assertTrue(metric.eq_labels({"test", "test2"}))
+            self.assertFalse(metric.eq_labels({"test", "invalid"}))
 
         with self.subTest("CLEANUP"):
             metric.cleanup()
@@ -202,7 +202,7 @@ class TestMetrics(unittest.TestCase):
         enum = Enum(
             "hist_no_lbl",
             "TEST",
-            ["x", "y"],
+            {"x", "y"},
         )
         self.assertEqual(enum.metric, "enum")
         self.assertEqual(enum.units, "enum")

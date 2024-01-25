@@ -114,3 +114,13 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
         _ = methods.pop(0)
         for method in methods:
             self.assertEqual(method, "AsyncTest:all_task_possibilities.async_access_short")
+
+    async def test_no_profiling(self):
+        tmp = profiler.handle_records
+        profiler.handle_records = False
+        async_access = dummy_api.AsyncTest()
+        await async_access.all_task_possibilities()
+        self.output.seek(0)
+        profiler.time_profile.cleanup()
+        self.assertEqual(self.output.readlines(), [])
+        profiler.handle_records = tmp

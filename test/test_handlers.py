@@ -1,3 +1,4 @@
+import copy
 import logging
 import sys
 import unittest
@@ -66,11 +67,22 @@ class TestHandlers(unittest.TestCase):
     @patch("phanos.publisher.OutputFormatter.record_to_str")
     def test_log_error_profiling(self, mock_rec_to_str: MagicMock, mock_publisher: MagicMock):
         mock_rec_to_str.return_value = ""
-        records = [testing_data.test_handler_in, testing_data.test_handler_in]
+        record = copy.deepcopy(testing_data.test_handler_in)
+        records = [record, record]
         handler = ImpProfHandler("rabbit")
+
         handler.log_error_profiling("test_name", records)
         self.assertEqual(mock_rec_to_str.call_count, 2)
         mock_rec_to_str.assert_called_with("test_name", records[0])
+
+        record["labels"]["error_raised"] = "False"
+        mock_rec_to_str.reset_mock()
+        handler.log_error_profiling("test_name", records)
+        mock_rec_to_str.assert_not_called()
+
+        _ = record["labels"].pop("error_raised", None)
+        handler.log_error_profiling("test_name", records)
+        mock_rec_to_str.assert_not_called()
 
     def test_stream_handler(self):
         output = StringIO()

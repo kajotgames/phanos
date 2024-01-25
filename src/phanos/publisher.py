@@ -20,6 +20,7 @@ from .types import LoggerLike, Record
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
 
+# type of callable, which is called before execution of profiled method
 BeforeType = typing.Optional[
     typing.Callable[
         [
@@ -30,6 +31,7 @@ BeforeType = typing.Optional[
         None,
     ]
 ]
+# type of callable, which is called after execution of profiled method
 AfterType = typing.Optional[typing.Callable[[typing.Any, typing.List[typing.Any], typing.Dict[str, typing.Any]], None]]
 
 
@@ -216,7 +218,7 @@ class Profiler(log.InstanceLoggerMixin):
                 f"{self.add_metric.__qualname__!r}: Metric {metric.name!r} already exist. Overwriting with new metric"
             )
         if self.error_raised_label:
-            metric.label_names.append("error_raised")
+            metric.label_names.add("error_raised")
         self.metrics[metric.name] = metric
         self.debug(f"Metric {metric.name!r} added to phanos profiler")
 
@@ -268,12 +270,12 @@ class Profiler(log.InstanceLoggerMixin):
         # send records and log em
         for metric in self.metrics.values():
             records = metric.to_records()
+            metric.cleanup()
             if not records:
                 continue
             for handler in self.handlers.values():
                 self.debug("handler %s handling metric %s", handler.handler_name, metric.name)
                 handler.handle(records, metric.name)
-            metric.cleanup()
 
     def force_handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
@@ -284,6 +286,9 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug("Forcing record handling")
         self.handle_records_clear()
         self.tree.clear()
+
+    def needs_profiling(self) -> bool:
+        return self.handlers and self.handle_records and self.metrics
 
     def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
         """
@@ -298,33 +303,32 @@ class Profiler(log.InstanceLoggerMixin):
         @wraps(func)
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync profiling"""
-            start_ts: typing.Optional[datetime] = None
-            if self.handlers and self.handle_records:
-                start_ts = self.before_function_handling(func, args, kwargs)
+            if not self.needs_profiling():
+                return func(*args, **kwargs)
+
+            result = None
+            start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = func(*args, **kwargs)
-            except BaseException as err:
-                # in case of exception handle measured records, cleanup and reraise
-                if self.handlers and self.handle_records:
-                    self.after_function_handling(None, start_ts, args, kwargs)
-                raise err
-            if self.handlers and self.handle_records:
+            except BaseException:
+                raise
+            finally:
                 self.after_function_handling(result, start_ts, args, kwargs)
             return result
 
         @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
-            """async async profiling"""
-            start_ts: typing.Optional[datetime] = None
-            if self.handlers and self.handle_records:
-                start_ts = self.before_function_handling(func, args, kwargs)
+            """async profiling"""
+            if not self.needs_profiling():
+                return await func(*args, **kwargs)
+
+            result = None
+            start_ts = self.before_function_handling(func, args, kwargs)
             try:
                 result: typing.Any = await func(*args, **kwargs)
-            except BaseException as err:
-                if self.handlers and self.handle_records:
-                    self.after_function_handling(None, start_ts, args, kwargs)
-                raise err
-            if self.handlers and self.handle_records:
+            except BaseException:
+                raise
+            finally:
                 self.after_function_handling(result, start_ts, args, kwargs)
             return result
 
@@ -349,18 +353,14 @@ class Profiler(log.InstanceLoggerMixin):
         except LookupError:
             curr_node.set(self.tree.root)
             current_node = self.tree.root
-
         current_node = current_node.add_child(MethodTreeNode(func, self.logger))
         curr_node.set(current_node)
 
-        if current_node.parent() == self.tree.root:
+        if current_node.parent == self.tree.root:
             if callable(self.before_root_func):
-                # users custom metrics profiling before root function if method passed
                 self.before_root_func(func, args, kwargs)
-            # place for phanos before root function profiling, if it will be needed
-
+            # place for phanos before root profiling, if it will be needed
         if callable(self.before_func):
-            # users custom metrics profiling before each decorated function if method passed
             self.before_func(func, args, kwargs)
 
         # phanos before each decorated function profiling
@@ -381,17 +381,14 @@ class Profiler(log.InstanceLoggerMixin):
         :param args: positional arguments of profiled function
         :param kwargs: keyword arguments of profiled function
         """
-        current_node = curr_node.get()
-
+        # phanos after each decorated function profiling
         if self.time_profile:
-            # phanos after each decorated function profiling
             self.time_profile.stop(start=start_ts, label_values={})
-
         if callable(self.after_func):
             # users custom metrics profiling after every decorated function if method passed
             self.after_func(result, args, kwargs)
-
-        if current_node.parent() is self.tree.root:
+        current_node = curr_node.get()
+        if current_node.parent is self.tree.root:
             # phanos after root function profiling
             if self.resp_size_profile:
                 self.resp_size_profile.rec(value=result, label_values={})
@@ -404,13 +401,12 @@ class Profiler(log.InstanceLoggerMixin):
             self.handle_records_clear()
 
         if current_node.parent is not None:
-            curr_node.set(current_node.parent())
+            curr_node.set(current_node.parent)
             found = self.tree.find_and_delete_node(current_node)
-            if not found:
-                self.debug(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
+            if not found:  # this won't happen if nobody messes with tree
+                self.warning(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
 
-        else:
-            # this case should not really happen
+        else:  # this won't happen if nobody messes with tree
             self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
             raise ValueError(f"{current_node.ctx!r} have no parent")
 
@@ -425,12 +421,11 @@ class Profiler(log.InstanceLoggerMixin):
             for metric in self.metrics.values():
                 try:
                     _ = metric.label_names.remove("error_raised")
-                except ValueError:
+                except KeyError:
                     pass
         else:
             for metric in self.metrics.values():
-                if "error_raised" not in metric.label_names:
-                    metric.label_names.append("error_raised")
+                metric.label_names.add("error_raised")
 
 
 class OutputFormatter:
@@ -579,10 +574,14 @@ class ImpProfHandler(BaseHandler):
         :param name: name of profiler
         :param records: list of records
         """
+        if not records or records[0].get("labels", {}).get("error_raised") is None:
+            return
         error_raised = False
         for record in records:
             if record.get("labels", {}).get("error_raised", "False") == "True":
                 error_raised = True
+                break
+
         if error_raised:
             converted = []
             for record in records:

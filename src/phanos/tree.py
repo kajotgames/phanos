@@ -53,7 +53,7 @@ class Context:
         return self.value
 
     def __repr__(self) -> str:
-        return self.value
+        return "'" + self.value + "'"
 
     def prepend_method_class(self) -> None:
         """
@@ -61,7 +61,7 @@ class Context:
 
         CANNOT DO: partial, lambda, property
 
-        Can do:  method, classmethod, staticmethod, decorator, descriptor
+        Can do:  method, classmethod, staticmethod, function ,decorator, descriptor
         """
         meth = self.method
         if inspect.ismethod(meth):
@@ -108,12 +108,9 @@ class ContextTree(log.InstanceLoggerMixin):
 
         :param node: node which should be deleted
         """
-        node_parent: typing.Optional[MethodTreeNode] = None
-        if node.parent:
-            node_parent = node.parent()
-        if isinstance(node_parent, MethodTreeNode):
-            node_parent.children.remove(node)
-            node_parent.children.extend(node.children)
+        if node.parent is not None:
+            node.parent.children.remove(node)
+            node.parent.children.extend(node.children)
         for child_to_move in node.children:
             child_to_move.parent = node.parent
         node.children = []
@@ -121,40 +118,56 @@ class ContextTree(log.InstanceLoggerMixin):
         self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
         del node
 
-    def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> bool:
-        """Deletes one node from ContextTree. if param `root` is passed, tree will be searched from this node
-        else search begin from `self.root`.
+    def _find_and_delete_node(self, node: MethodTreeNode, root: MethodTreeNode) -> bool:
+        """Searches for node in subtree starting from `root` and deletes it
 
-        :param node: node which to delete
-        :param root: root of ContextTree.
+        :param node: node to be deleted
+        :param root: root of subtree
         """
-        if root is None:
-            root = self.root
-
         if root is node:
             self.delete_node(node)
             return True
 
         for child in root.children:
-            return self.find_and_delete_node(node, child)
+            return self._find_and_delete_node(node, child)
 
         return False
 
-    def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
-        """Deletes whole subtree starting from param `root`. If param root is not passed, `self.root` is used
+    def find_and_delete_node(self, node: MethodTreeNode, root: typing.Optional[MethodTreeNode] = None) -> bool:
+        """Deletes one node from ContextTree. if param `root` is passed, tree will be searched from this node
+        else search begin from `self.root`. Cannot delete 'self.root' node
 
-        If root == self.root, then self.root is kept. otherwise root is deleted
+        :param node: node which to delete, cannot be 'self.root'
+        :param root: root of ContextTree.
+        :returns: True if node was found and deleted, False otherwise
+        """
+        if node is self.root:
+            self.warning(f"{self.find_and_delete_node.__qualname__}: cannot delete root node")
+            return False
+        if root is None:
+            root = self.root
+
+        return self._find_and_delete_node(node, root)
+
+    def _clear(self, root: MethodTreeNode) -> None:
+        """Deletes whole subtree starting from param 'root'. Deletes from bottom to top"""
+        for child in root.children:
+            self._clear(child)
+
+        if not root == self.root:
+            self.delete_node(root)
+
+    def clear(self, root: typing.Optional[MethodTreeNode] = None) -> None:
+        """Deletes whole subtree starting from param 'root'. If param root is not passed, 'self.root' is used
+
+        If 'root' == 'self.root', then 'self.root' is kept. otherwise 'root' is deleted
 
         :param root: Node from which to start deleting tree.
         """
         if root is None:
             root = self.root
 
-        for child in root.children:
-            self.clear(child)
-
-        if not root == self.root:
-            self.delete_node(root)
+        self._clear(root)
 
 
 class MethodTreeNode(log.InstanceLoggerMixin):
@@ -162,7 +175,7 @@ class MethodTreeNode(log.InstanceLoggerMixin):
     Class representing one node of ContextTree
     """
 
-    parent: typing.Optional[weakref.ReferenceType]
+    _parent: typing.Optional[weakref.ReferenceType]
     children: typing.List[MethodTreeNode]
     ctx: Context
 
@@ -181,6 +194,16 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         self.parent = None
         self.ctx = Context(method)
 
+    @property
+    def parent(self) -> typing.Optional[MethodTreeNode]:
+        """Getter for parent node"""
+        return self._parent() if self._parent else None
+
+    @parent.setter
+    def parent(self, parent: typing.Optional[MethodTreeNode]) -> None:
+        """Setter for parent node"""
+        self._parent = weakref.ref(parent) if parent else None
+
     def add_child(self, child: MethodTreeNode) -> MethodTreeNode:
         """Add child node to `self`
 
@@ -190,8 +213,8 @@ class MethodTreeNode(log.InstanceLoggerMixin):
         :param child: child to be inserted
         :returns: child parameter
         """
-        child.parent = weakref.ref(self)
-        if self.ctx.method is None:  # equivalent of 'self.context != ""' -> i am root
+        child.parent = self
+        if self.ctx.method is None:  # is root
             child.ctx.prepend_method_class()
         else:
             child.ctx.value = self.ctx.value + "." + child.ctx.value

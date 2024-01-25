@@ -31,12 +31,6 @@ dependencies = [
 directory = "src"
 name = "phanos"
 
-[tool.coverage.run]
-branch = true
-source = "phanos"
-
-[tool.coverage.paths]
-source = ["src"]
 
 [project.urls]
 "Homepage" = "https://github.com/kajotgames/phanos"

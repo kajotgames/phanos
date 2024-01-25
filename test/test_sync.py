@@ -110,7 +110,7 @@ class TestProfiling(unittest.TestCase):
         self.assertEqual(phanos_profiler.tree.root.children, [])
 
     def test_custom_profile_addition(self):
-        hist = Histogram("test_name", "TEST", "test_units", ["place"])
+        hist = Histogram("test_name", "TEST", "test_units", {"place"})
         self.assertEqual(len(phanos_profiler.metrics), 2)
         phanos_profiler.add_metric(hist)
         self.assertEqual(len(phanos_profiler.metrics), 3)
@@ -185,13 +185,13 @@ class TestProfiling(unittest.TestCase):
         self.assertNotIn("error_raised", hist.label_names)
         hist.observe(2.0, None)
         self.assertEqual([{}], hist.label_values)
-        self.assertEqual([], hist.label_names)
+        self.assertEqual(set(), hist.label_names)
 
         test_profiler.error_raised_label = True
         hist.observe(2.0, None)
 
         self.assertEqual([{}, {"error_raised": False}], hist.label_values)
-        self.assertEqual(["error_raised"], hist.label_names)
+        self.assertEqual({"error_raised"}, hist.label_names)
 
     @patch("phanos.publisher.BlockingPublisher")
     def test_error_occurred_handling(self, publisher_mock):

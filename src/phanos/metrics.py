@@ -26,7 +26,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
     job: str
     metric: str
     values: typing.List[tuple[str, typing.Union[float, str, dict[str, typing.Any]]]]
-    label_names: typing.List[str]
+    label_names: typing.Set[str]
     label_values: typing.List[typing.Dict[str, str]]
     operations: typing.Dict[str, typing.Callable]
     default_operation: str
@@ -36,7 +36,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
         name: str,
         job: str,
         units: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -52,7 +52,7 @@ class MetricWrapper(log.InstanceLoggerMixin):
         self.values = []
         self.method = []
         self.job = job
-        self.label_names = list(set(labels)) if labels else []
+        self.label_names = labels if labels else set()
         self.label_values = []
         self.operations = {}
         self.default_operation = ""
@@ -84,14 +84,12 @@ class MetricWrapper(log.InstanceLoggerMixin):
 
         return records
 
-    def check_labels(self, labels: typing.List[str]) -> bool:
+    def eq_labels(self, labels: typing.Set[str]) -> bool:
         """Check if labels of records == labels specified at initialization
 
         :param labels: label keys and values of one record
         """
-        if sorted(labels) == sorted(self.label_names):
-            return True
-        return False
+        return labels == self.label_names
 
     def cleanup(self) -> None:
         """Cleanup after all records was sent
@@ -159,14 +157,15 @@ class StoreOperationDecorator:
             label_values = {}
         if "error_raised" in instance.label_names:
             label_values["error_raised"] = sys.exc_info()[0] is not None
-        labels_ok = instance.check_labels(list(label_values.keys()))
+        labels_ok = instance.eq_labels(set(label_values.keys()))
         if not labels_ok:
             instance.error(
                 f"{self.operation.__qualname__!r}: metric {instance.name!r} expected labels: {instance.label_names}, "
-                f"labels given: {label_values.keys()}"
+                f"labels given: {set(label_values.keys())}"
             )
             return
         instance.label_values.append(label_values)
+
         try:
             instance.method.append(curr_node.get().ctx.value)
         except LookupError:
@@ -204,7 +203,7 @@ class Histogram(MetricWrapper):
         name: str,
         job: str,
         units: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -246,7 +245,7 @@ class Summary(MetricWrapper):
         name: str,
         job: str,
         units: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -288,7 +287,7 @@ class Counter(MetricWrapper):
         name: str,
         job: str,
         units: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -331,7 +330,7 @@ class Info(MetricWrapper):
         name: str,
         job: str,
         units: typing.Optional[str] = None,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -376,7 +375,7 @@ class Gauge(MetricWrapper):
         name: str,
         job: str,
         units: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -446,15 +445,15 @@ class Enum(MetricWrapper):
     """class representing enum metric of Prometheus"""
 
     metric: str
-    states: typing.List[str]
+    states: typing.Set[str]
 
     def __init__(
         self,
         name: str,
         job: str,
-        states: typing.List[str],
+        states: typing.Set[str],
         units: typing.Optional[str] = None,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -486,7 +485,7 @@ class Enum(MetricWrapper):
         """
         _ = label_values
         if value not in self.states:
-            raise InvalidValueError("in {self.states}")
+            raise InvalidValueError(f"in {self.states}")
         self.values.append(("state", value))
 
 
@@ -501,7 +500,7 @@ class TimeProfiler(Histogram):
         self,
         name: str,
         job: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """
@@ -530,7 +529,7 @@ class ResponseSize(Histogram):
         self,
         name: str,
         job: str,
-        labels: typing.Optional[typing.List[str]] = None,
+        labels: typing.Optional[typing.Set[str]] = None,
         logger: typing.Optional[LoggerLike] = None,
     ) -> None:
         """

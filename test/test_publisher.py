@@ -73,7 +73,7 @@ class TestProfiler(unittest.TestCase):
         self.profiler.metrics = {}
         metric = MagicMock()
         metric.name = "test"
-        metric.label_names = []
+        metric.label_names = set()
 
         self.profiler.add_metric(metric)
         self.profiler.add_metric(metric)
@@ -131,7 +131,11 @@ class TestProfiler(unittest.TestCase):
         mock_clear.assert_called_once()
 
     def test_set_error_raised(self):
-        self.profiler.time_profile.label_names = ["some_value"]
+        self.profiler.time_profile.label_names = {"some_value"}
         self.profiler.error_raised_label = False
         for metric in self.profiler.metrics.values():
-            self.assertNotIn("error_raised", metric.label_values)
+            self.assertNotIn("error_raised", metric.label_names)
+
+        self.profiler.error_raised_label = True
+        for metric in self.profiler.metrics.values():
+            self.assertIn("error_raised", metric.label_names)
