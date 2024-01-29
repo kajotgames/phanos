@@ -87,6 +87,7 @@ class Profiler(log.InstanceLoggerMixin):
         request_size_profile: bool = False,
         handle_records: bool = True,
         error_raised_label: bool = True,
+        **kwargs,
     ) -> None:
         """configure profiler instance
         :param error_raised_label: if record should have label signalizing error occurrence
@@ -95,6 +96,7 @@ class Profiler(log.InstanceLoggerMixin):
         :param logger: logger instance
         :param request_size_profile: should create instance of response size profiler
         :param handle_records: should handle recorded records
+        :param ** kwargs: additional parameters
         """
         self.logger = logger or logging.getLogger(__name__)
         self.job = job
@@ -103,8 +105,8 @@ class Profiler(log.InstanceLoggerMixin):
         self.error_raised_label = error_raised_label
 
         self.tree = ContextTree(self.logger)
-
-        if request_size_profile:
+        # request_size_profile deprecated
+        if request_size_profile or kwargs.pop("response_size_profile", False):
             self.create_response_size_profiler()
         if time_profile:
             self.create_time_profiler()
@@ -146,7 +148,8 @@ class Profiler(log.InstanceLoggerMixin):
         self.job = settings["job"]
         if settings.get("time_profile"):
             self.create_time_profiler()
-        if settings.get("request_size_profile"):
+        # request_size_profile deprecated
+        if settings.get("request_size_profile") or settings.get("response_size_profile"):
             self.create_response_size_profiler()
         self.error_raised_label = settings.get("error_raised_label", True)
         self.handle_records = settings.get("handle_records", True)

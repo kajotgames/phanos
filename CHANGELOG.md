@@ -18,6 +18,12 @@ now it is logged as warning and record is ignored
  - `Profiler.delete_metric` and `Profiler.delete_handler`no longer raising `KeyError`when metric/handler not exists
 now it is logged as warning 
 
+### Deprecated
+
+- `request_size_profile` parameter in `Profiler.config()` and `Profiler.dict_config()` is deprecated and will be removed in future versions, use
+`response_size_profile` instead
+
+
 ## [0.2.2] - 2023-08-18
 
 ### Changed
