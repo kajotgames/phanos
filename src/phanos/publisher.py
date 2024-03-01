@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import wraps
 
 from . import log
-from .messaging import BlockingPublisher, NETWORK_ERRORS
+from .messaging import AsyncioPublisher, NETWORK_ERRORS
 from .tree import ContextTree, curr_node
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
@@ -485,7 +485,7 @@ class BaseHandler:
 class ImpProfHandler(BaseHandler):
     """RabbitMQ record handler"""
 
-    publisher: BlockingPublisher
+    publisher: AsyncioPublisher
     formatter: OutputFormatter
     logger: typing.Optional[LoggerLike]
 
@@ -532,7 +532,7 @@ class ImpProfHandler(BaseHandler):
         super().__init__(handler_name)
 
         self.logger = logger or logging.getLogger(__name__)
-        self.publisher = BlockingPublisher(
+        self.publisher = AsyncioPublisher(
             host=host,
             port=port,
             user=user,
@@ -556,7 +556,7 @@ class ImpProfHandler(BaseHandler):
         self.formatter = OutputFormatter()
         self.logger.info("ImpProfHandler created successfully")
 
-    def handle(
+    async def handle(
         self,
         records: typing.List[Record],
         profiler_name: str = "profiler",
@@ -568,7 +568,7 @@ class ImpProfHandler(BaseHandler):
         """
 
         for record in records:
-            _ = self.publisher.publish(record)
+            _ = await self.publisher.publish(record)
         self.log_error_profiling(profiler_name, records)
 
     def log_error_profiling(self, name: str, records: typing.List[Record]) -> None:

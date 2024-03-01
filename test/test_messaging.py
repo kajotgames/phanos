@@ -5,12 +5,12 @@ from unittest.mock import patch, MagicMock
 from orjson import orjson
 
 import testing_data
-from phanos.messaging import BlockingPublisher
+from phanos.messaging import AsyncioPublisher
 
 
 class TestMessaging(unittest.TestCase):
     def setUp(self):
-        self.publisher = BlockingPublisher()
+        self.publisher = AsyncioPublisher()
 
     def tearDown(self):
         self.publisher = None
@@ -18,17 +18,25 @@ class TestMessaging(unittest.TestCase):
     def test_is_connected(self):
         self.assertFalse(self.publisher.is_connected())
         self.publisher.connection = MagicMock()
+        self.publisher.connection.is_closed = True
+        self.assertFalse(self.publisher.is_connected())
+        self.publisher.connection.is_closed = False
         self.assertTrue(self.publisher.is_connected())
 
     def test_is_bound(self):
         self.assertFalse(self.publisher._is_bound())
         self.publisher.channel = MagicMock()
+        self.publisher.channel.is_closed = True
+        self.assertFalse(self.publisher._is_bound())
+        self.publisher.channel.is_closed = False
         self.assertTrue(self.publisher._is_bound())
 
     def test_bool(self):
         self.assertFalse(self.publisher)
         self.publisher.connection = MagicMock()
         self.publisher.channel = MagicMock()
+        self.publisher.connection.is_closed = False
+        self.publisher.channel.is_closed = False
         self.assertTrue(self.publisher)
 
     def test_close(self):
@@ -42,7 +50,7 @@ class TestMessaging(unittest.TestCase):
         self.publisher.connection = None
         self.publisher.channel = None
 
-    @patch("pika.BlockingConnection", autospec=True)
+    @patch("aio_pika.RobustConnection", autospec=True)
     def test_connect(self, mock_connection: MagicMock):
         self.publisher.connect()
         mock_connection.assert_called_once()
@@ -50,7 +58,7 @@ class TestMessaging(unittest.TestCase):
     @patch("test.test_messaging.BlockingPublisher.close")
     @patch("test.test_messaging.BlockingPublisher.connect")
     def test_reconnect(self, mock_connect: MagicMock, mock_close: MagicMock):
-        publisher = BlockingPublisher()
+        publisher = AsyncioPublisher()
         publisher.reconnect()
         mock_close.assert_called_once()
         mock_connect.assert_called_once()
@@ -64,7 +72,7 @@ class TestMessaging(unittest.TestCase):
     @patch("test.test_messaging.BlockingPublisher.close")
     @patch("test.test_messaging.BlockingPublisher.connect")
     def test_check_or_rebound(self, mock_connect: MagicMock, mock_close: MagicMock):
-        publisher = BlockingPublisher()
+        publisher = AsyncioPublisher()
         publisher.check_or_rebound()
         mock_close.assert_called_once()
         mock_connect.assert_called_once()
@@ -82,7 +90,7 @@ class TestMessaging(unittest.TestCase):
         _ = mock_connect
         _ = mock_close
         mock_channel = MagicMock()
-        publisher = BlockingPublisher()
+        publisher = AsyncioPublisher()
         publisher.channel = mock_channel
         self.assertTrue(publisher.publish(testing_data.test_handler_in))
         mock_channel.basic_publish.assert_called_once_with(

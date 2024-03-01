@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 
 ### Changed
-
+ - RabbitMQ publisher is now async
  - `MetricWrapper.label_names` are now `Set` instead of `List`
  - `StoreOperationDecorator` no longer raises `ValueError` when input of `operation` is not valid, 
 now it is logged as warning and record is ignored
