@@ -1,6 +1,7 @@
 import logging
 import time
 import typing
+from abc import ABC
 
 import aio_pika
 import orjson
@@ -8,12 +9,18 @@ import pika.exceptions
 from aio_pika import Message
 from aio_pika.abc import AbstractRobustConnection, AbstractRobustChannel, AbstractRobustExchange
 from pika import ConnectionParameters
+from pika.adapters.blocking_connection import BlockingConnection, BlockingChannel
 from pika.adapters.utils.connection_workflow import AMQPConnectorException
 from pika.credentials import PlainCredentials
 
 from . import types
 
-__all__ = ("LoggerLike", "NETWORK_ERRORS", "AsyncioPublisher")
+__all__ = (
+    "LoggerLike",
+    "NETWORK_ERRORS",
+    "AsyncioPublisher",
+    "BlockingPublisher",
+)
 
 LoggerLike = typing.Union[logging.Logger, logging.LoggerAdapter]
 
@@ -25,25 +32,26 @@ NETWORK_ERRORS = (
 )
 
 
-class AsyncioPublisher:
-    """Simple blocking AMQP consumer"""
+# TODO: make wrapper for BlockingConnection and AbstractRobustConnection?
+#       Need to make abstractmethods?
 
+
+class BasePublisher:
     __slots__ = (
         "exchange_name",
         "exchange_type",
         "connection_parameters",
         "connection",
         "channel",
-        "exchange",
         "retry",
         "logger",
     )
+
     exchange_name: str
     exchange_type: str
     connection_parameters: ConnectionParameters
-    connection: typing.Optional[AbstractRobustConnection]
-    channel: typing.Optional[AbstractRobustChannel]
-    exchange: typing.Optional[AbstractRobustExchange]
+    connection: typing.Optional[typing.Union[BlockingConnection, AbstractRobustConnection]]
+    channel: typing.Optional[typing.Union[BlockingChannel, AbstractRobustChannel]]
     retry: int
     logger: LoggerLike
 
@@ -88,7 +96,6 @@ class AsyncioPublisher:
         self.logger = logger or logging.getLogger(__name__)
         self.connection = None
         self.channel = None
-        self.exchange = None
         self.exchange_name = exchange_name
         self.exchange_type = exchange_type.value if isinstance(exchange_type, aio_pika.ExchangeType) else exchange_type
         self.retry = max(0, retry)
@@ -113,6 +120,86 @@ class AsyncioPublisher:
 
     def _is_bound(self) -> bool:
         return not (self.channel is None or self.channel.is_closed)
+
+
+class BlockingPublisher(BasePublisher):
+    """Simple blocking AMQP consumer"""
+
+    connection: typing.Optional[BlockingConnection]
+    channel: typing.Optional[BlockingChannel]
+
+    def close(self) -> None:
+        if self.is_connected():
+            if self._is_bound():
+                self.channel.close()
+            self.connection.close()
+        self.connection = None
+        self.channel = None
+        self.logger.info(f"{type(self).__qualname__} - closed connection")
+
+    def connect(self) -> None:
+        self.connection = pika.BlockingConnection(self.connection_parameters)
+        self.channel = self.connection.channel()
+        self.channel.exchange_declare(
+            exchange=self.exchange_name,
+            exchange_type=self.exchange_type,
+        )
+        self.logger.info(f"{type(self).__qualname__} - connection established")
+
+    def reconnect(self, silent: bool = False) -> None:
+        """Force reconnect to server"""
+        self.close()
+        if not silent:
+            self.connect()
+            return
+        try:
+            self.connect()
+        except NETWORK_ERRORS as e:
+            self.logger.warning(f"{type(self).__qualname__} - connection failed on {e!r}")
+
+    def check_or_rebound(self) -> None:
+        if not self:
+            self.close()
+            self.connect()
+
+    def publish(self, records: typing.List[types.Record]) -> bool:
+        """
+        Push record to message queue.
+        :param records: list of records dict
+        :return: was record queued?
+        """
+        if not records:
+            return True
+        attempts_left = 1 + self.retry
+        bin_message = orjson.dumps(records)
+        is_published = False
+        self.check_or_rebound()
+        while attempts_left > 0 and not is_published:
+            attempts_left -= 1
+            try:
+                self.channel.basic_publish(
+                    exchange=self.exchange_name,
+                    body=bin_message,
+                    routing_key=records[0]["job"],
+                )
+                is_published = True
+            except NETWORK_ERRORS as e:
+                self.logger.warning(
+                    f"{type(self).__qualname__} - exchange {self.exchange_name!r} cannot "
+                    f"accept message {records!r} because {e!r}"
+                )
+                time.sleep(float(self.connection_parameters.retry_delay))
+                self.reconnect(silent=True)
+        return is_published
+
+
+class AsyncioPublisher(BasePublisher):
+    """Simple blocking AMQP consumer"""
+
+    __slots__ = ("exchange",)
+    connection: typing.Optional[AbstractRobustConnection]
+    channel: typing.Optional[AbstractRobustChannel]
+    exchange: typing.Optional[AbstractRobustExchange]
 
     async def close(self) -> None:
         if self.is_connected():
@@ -157,14 +244,16 @@ class AsyncioPublisher:
             await self.close()
             await self.connect()
 
-    async def publish(self, record: types.Record) -> bool:
+    async def publish(self, records: typing.List[types.Record]) -> bool:
         """
         Push record to message queue.
-        :param record: record dict
+        :param records: List record dict
         :return: was record queued?
         """
+        if not records:
+            return True
         attempts_left = 1 + self.retry
-        bin_message = orjson.dumps(record)
+        bin_message = orjson.dumps(records)
         is_published = False
         await self.check_or_rebound()
         while attempts_left > 0 and not is_published:
@@ -175,13 +264,13 @@ class AsyncioPublisher:
                         body=bin_message,
                         content_type="application/json",
                     ),
-                    routing_key=record["job"],
+                    routing_key=records[0]["job"],
                 )
                 is_published = True
             except NETWORK_ERRORS as e:
                 self.logger.warning(
                     f"{type(self).__qualname__} - exchange {self.exchange_name!r} cannot "
-                    f"accept message {record!r} because {e!r}"
+                    f"accept message {records!r} because {e!r}"
                 )
                 time.sleep(float(self.connection_parameters.retry_delay))
                 await self.reconnect(silent=True)

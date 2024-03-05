@@ -11,7 +11,7 @@ import phanos
 from src.phanos import phanos_profiler
 from phanos.publisher import (
     BaseHandler,
-    ImpProfHandler,
+    SyncImpProfHandler,
     LoggerHandler,
     NamedLoggerHandler,
     StreamHandler,
@@ -44,7 +44,7 @@ class TestHandlers(unittest.TestCase):
     def test_imp_prof_handler(self, mock_profiling: MagicMock, mock_publisher: MagicMock):
         mock_publisher.return_value.connect.return_value = True
         with self.subTest("VALID INIT"):
-            handler = ImpProfHandler("rabbit")
+            handler = SyncImpProfHandler("rabbit")
             mock_publisher.assert_called_once()
             mock_publisher.return_value.connect.assert_called_once()
             mock_publisher.return_value.close.assert_called_once()
@@ -53,12 +53,12 @@ class TestHandlers(unittest.TestCase):
         mock_publisher.return_value.connect.side_effect = AMQPConnectorException()
         with self.subTest("INVALID INIT"):
             with self.assertRaises(RuntimeError):
-                _ = ImpProfHandler("rabbit")
+                _ = SyncImpProfHandler("rabbit")
 
         mock_publisher.return_value.connect.side_effect = None
         with self.subTest("HANDLE"):
             records = [testing_data.test_handler_in, testing_data.test_handler_in]
-            handler = ImpProfHandler("rabbit")
+            handler = SyncImpProfHandler("rabbit")
             handler.handle(records, "test_name")
             self.assertEqual(mock_publisher.return_value.publish.call_count, 2)
             mock_profiling.assert_called_once_with("test_name", records)
@@ -69,7 +69,7 @@ class TestHandlers(unittest.TestCase):
         mock_rec_to_str.return_value = ""
         record = copy.deepcopy(testing_data.test_handler_in)
         records = [record, record]
-        handler = ImpProfHandler("rabbit")
+        handler = SyncImpProfHandler("rabbit")
 
         handler.log_error_profiling("test_name", records)
         self.assertEqual(mock_rec_to_str.call_count, 2)

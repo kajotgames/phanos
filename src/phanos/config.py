@@ -41,7 +41,7 @@ def import_external(full_name: str) -> typing.Any:
     return module
 
 
-TC = typing.TypeVar("TC")
+TC = typing.TypeVar("TC", phanos.publisher.AsyncBaseHandler, phanos.publisher.SyncBaseHandler)
 
 
 def _to_callable(elem: typing.Union[str, TC]) -> TC:
@@ -67,7 +67,8 @@ def parse_arguments(arguments: dict[str, typing.Any]) -> dict[str, typing.Any]:
     return parsed
 
 
-def create_handlers(configs: dict) -> typing.Dict[str, phanos.publisher.BaseHandler]:
+# TODO: refactor create_handlers and create_async_handlers
+def create_handlers(configs: dict) -> typing.Dict[str, phanos.publisher.SyncBaseHandler]:
     """
     Factory to create handlers based on dict config.
 
@@ -87,7 +88,25 @@ def create_handlers(configs: dict) -> typing.Dict[str, phanos.publisher.BaseHand
     new_handlers = {}
     for ref_name, config in configs.items():
         original_kw_args = copy.deepcopy(config)
-        cls_handler = _to_callable(original_kw_args.pop("class"))
+        cls_handler: typing.Type[TC] = _to_callable(original_kw_args.pop("class"))
+        if issubclass(cls_handler, phanos.publisher.AsyncBaseHandler):
+            raise phanos.publisher.UnsupportedHandler("Use create_async_handlers for async handlers")
         kw_args = parse_arguments(original_kw_args)
         new_handlers[ref_name] = cls_handler(**kw_args)
+    return new_handlers
+
+
+async def create_async_handlers(
+    configs: dict,
+) -> typing.Dict[str, typing.Union[phanos.publisher.AsyncBaseHandler, phanos.publisher.SyncBaseHandler]]:
+    new_handlers = {}
+    for ref_name, config in configs.items():
+        original_kw_args = copy.deepcopy(config)
+        cls_handler: typing.Type[TC] = _to_callable(original_kw_args.pop("class"))
+        kw_args = parse_arguments(original_kw_args)
+        if issubclass(cls_handler, phanos.publisher.AsyncBaseHandler):
+            new_handlers[ref_name] = await cls_handler.create(**kw_args)
+        else:
+            new_handlers[ref_name] = cls_handler(**kw_args)
+
     return new_handlers

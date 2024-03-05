@@ -20,3 +20,4 @@ phanos_profiler = profiler
 
 # default instance profile method
 profile = profiler.profile
+# TODO: a_profile, a_profiler
