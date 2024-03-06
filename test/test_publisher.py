@@ -113,20 +113,20 @@ class TestProfiler(unittest.TestCase):
         mock_handler = MagicMock()
         mock_handler.handler_name = "test"
         self.profiler.handlers = {"test": mock_handler}
-        self.profiler.handle_records_clear()
+        self.profiler.profile_ext.handle_records_clear()
         self.assertEqual(cleanup.call_count, 2)
         self.assertEqual(to_records.call_count, 2)
         self.assertEqual(mock_handler.handle.call_count, 2)
 
         mock_handler.handle.reset_mock()
         to_records.return_value = None
-        self.profiler.handle_records_clear()
+        self.profiler.profile_ext.handle_records_clear()
         self.assertEqual(mock_handler.handle.call_count, 0)
 
-    @patch("phanos.publisher.Profiler.handle_records_clear")
+    @patch("phanos.publisher.SyncExtProfiler.handle_records_clear")
     @patch("phanos.publisher.ContextTree.clear")
     def test_force_handle_records_clear(self, mock_clear: MagicMock, mock_handle: MagicMock):
-        self.profiler.force_handle_records_clear()
+        self.profiler.profile_ext.force_handle_records_clear()
         mock_handle.assert_called_once()
         mock_clear.assert_called_once()
 

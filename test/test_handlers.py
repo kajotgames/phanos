@@ -1,14 +1,11 @@
 import copy
 import logging
-import sys
 import unittest
 from io import StringIO
 from unittest.mock import patch, MagicMock
 
 from pika.adapters.utils.connection_workflow import AMQPConnectorException
 
-import phanos
-from src.phanos import phanos_profiler
 from phanos.publisher import (
     BaseHandler,
     SyncImpProfHandler,
@@ -16,6 +13,7 @@ from phanos.publisher import (
     NamedLoggerHandler,
     StreamHandler,
     OutputFormatter,
+    log_error_profiling,
 )
 from test import testing_data
 
@@ -35,12 +33,8 @@ class TestHandlers(unittest.TestCase):
         base = BaseHandler("test_handler")
         self.assertEqual(base.handler_name, "test_handler")
 
-        # base handler.handle
-        base = BaseHandler("test_handler")
-        self.assertRaises(NotImplementedError, base.handle, "test_profiler", {})
-
     @patch("phanos.publisher.BlockingPublisher")
-    @patch("phanos.publisher.ImpProfHandler.log_error_profiling")
+    @patch("phanos.publisher.log_error_profiling")
     def test_imp_prof_handler(self, mock_profiling: MagicMock, mock_publisher: MagicMock):
         mock_publisher.return_value.connect.return_value = True
         with self.subTest("VALID INIT"):
@@ -60,8 +54,8 @@ class TestHandlers(unittest.TestCase):
             records = [testing_data.test_handler_in, testing_data.test_handler_in]
             handler = SyncImpProfHandler("rabbit")
             handler.handle(records, "test_name")
-            self.assertEqual(mock_publisher.return_value.publish.call_count, 2)
-            mock_profiling.assert_called_once_with("test_name", records)
+            self.assertEqual(mock_publisher.return_value.publish.call_count, 1)
+            mock_profiling.assert_called_once_with("test_name", handler.formatter, handler.logger, records)
 
     @patch("phanos.publisher.BlockingPublisher")
     @patch("phanos.publisher.OutputFormatter.record_to_str")
@@ -71,17 +65,17 @@ class TestHandlers(unittest.TestCase):
         records = [record, record]
         handler = SyncImpProfHandler("rabbit")
 
-        handler.log_error_profiling("test_name", records)
+        log_error_profiling("test_name", handler.formatter, handler.logger, records)
         self.assertEqual(mock_rec_to_str.call_count, 2)
         mock_rec_to_str.assert_called_with("test_name", records[0])
 
         record["labels"]["error_raised"] = "False"
         mock_rec_to_str.reset_mock()
-        handler.log_error_profiling("test_name", records)
+        log_error_profiling("test_name", handler.formatter, handler.logger, records)
         mock_rec_to_str.assert_not_called()
 
         _ = record["labels"].pop("error_raised", None)
-        handler.log_error_profiling("test_name", records)
+        log_error_profiling("test_name", handler.formatter, handler.logger, records)
         mock_rec_to_str.assert_not_called()
 
     def test_stream_handler(self):
