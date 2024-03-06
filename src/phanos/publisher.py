@@ -45,7 +45,36 @@ class UnsupportedHandler(Exception):
     pass
 
 
-class BaseProfiler(log.InstanceLoggerMixin, ABC):
+class AbstractExtProfiler(ABC):
+    @abstractmethod
+    def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
+        """
+        Decorator specifying which methods should be profiled.
+        Default profiler is time profiler which measures execution time of decorated methods
+
+        Usage: decorate methods which you want to be profiled
+
+        :param func: method or function which should be profiled
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def handle_records_clear(self) -> None:
+        """Pass stored records to each registered Handler and delete stored records.
+        This method DOES NOT clear MethodContext tree
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def force_handle_records_clear(self) -> None:
+        """Pass stored records to each registered Handler and delete stored records.
+
+        As side effect clears all metrics and DOES CLEAR MethodContext tree
+        """
+        raise NotImplementedError
+
+
+class Profiler(log.InstanceLoggerMixin):
     """Base class for Profiler"""
 
     tree: ContextTree
@@ -65,6 +94,10 @@ class BaseProfiler(log.InstanceLoggerMixin, ABC):
     after_func: AfterType
     before_root_func: BeforeType
     after_root_func: AfterType
+
+    profile_ext: typing.Optional[typing.Union[AsyncExtProfiler, SyncExtProfiler]]
+
+    profile = AbstractExtProfiler.profile
 
     def __init__(self) -> None:
         """Initialize Profiler
@@ -90,7 +123,6 @@ class BaseProfiler(log.InstanceLoggerMixin, ABC):
         super().__init__(logged_name="phanos")
 
     # TODO: need all of these methods to be implemented??
-    @abstractmethod
     def dict_config(self, settings: dict[str, typing.Any]) -> None:
         """
         Configure profiler instance with dictionary config.
@@ -116,65 +148,32 @@ class BaseProfiler(log.InstanceLoggerMixin, ABC):
             ```
         :param settings: dictionary of desired profiling set up
         """
-        raise NotImplementedError
+        from . import config as phanos_config
 
-    @abstractmethod
-    def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
-        """
-        Decorator specifying which methods should be profiled.
-        Default profiler is time profiler which measures execution time of decorated methods
+        self._dict_cfg_sync(settings)
+        if "handlers" in settings:
+            try:
+                named_handlers = phanos_config.create_handlers(settings["handlers"])
+            except UnsupportedHandler:
+                self.error(f"Cannot create async handler in sync profiler")
+                raise
+            for handler in named_handlers.values():
+                self.add_handler(handler)
+        self.profile_ext = SyncExtProfiler(self)
+        self.profile = self.profile_ext.profile
 
-        Usage: decorate methods which you want to be profiled
+    async def async_dict_config(self, settings: dict[str, typing.Any]) -> None:
+        from . import config as phanos_config
 
-        :param func: method or function which should be profiled
-        """
-        raise NotImplementedError
+        self._dict_cfg_sync(settings)
+        if "handlers" in settings:
+            named_handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
+            named_handlers = await phanos_config.create_async_handlers(settings["handlers"])
+            for handler in named_handlers.values():
+                self.add_handler(handler)
+        self.profile_ext = AsyncExtProfiler(self)
+        self.profile = self.profile_ext.profile
 
-    @abstractmethod
-    def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
-        """Method for handling before function profiling chores
-
-        Creates new MethodTreeNode instance and sets it in ContextVar for current_node,
-        makes measurements needed and executes user-defined function if exists
-
-        :param func: profiled function
-        :param args: positional arguments of profiled function
-        :param kwargs: keyword arguments of profiled function
-        :returns: timestamp of function execution start
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
-        """Method for handling after function profiling chores
-
-        Deletes current node and sets ContextVar to current_node.parent,
-        makes measurements needed and executes user-defined function if exists and handle measured records
-
-        :param result: result of profiled function
-        :param start_ts: timestamp measured in `self.before_function_handling`
-        :param args: positional arguments of profiled function
-        :param kwargs: keyword arguments of profiled function
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def handle_records_clear(self) -> None:
-        """Pass stored records to each registered Handler and delete stored records.
-        This method DOES NOT clear MethodContext tree
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def force_handle_records_clear(self) -> None:
-        """Pass stored records to each registered Handler and delete stored records.
-
-        As side effect clears all metrics and DOES CLEAR MethodContext tree
-        """
-        # send records and log em
-        self.debug("Forcing record handling")
-        self.handle_records_clear()
-        self.tree.clear()
 
     def _dict_cfg_sync(self, settings: dict[str, typing.Any]) -> None:
         if "logger" in settings:
@@ -223,6 +222,8 @@ class BaseProfiler(log.InstanceLoggerMixin, ABC):
             self.create_response_size_profiler()
         if time_profile:
             self.create_time_profiler()
+
+        # TODO: either deprecate or keep just for blocking shit or add async_config
 
         self.debug("Profiler configured successfully")
 
@@ -382,9 +383,16 @@ class BaseProfiler(log.InstanceLoggerMixin, ABC):
             start_ts = datetime.now()
         return start_ts
 
-
-class Profiler(BaseProfiler):
+class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
     """Class responsible for SYNC profiling and handling of measured values"""
+
+    base_profiler: Profiler
+
+    tree: ContextTree
+    metrics: typing.Dict[str, MetricWrapper]
+    time_profile: typing.Optional[TimeProfiler]
+    resp_size_profile: typing.Optional[ResponseSize]
+    handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
 
     # space for user specific profiling logic
     before_func: BeforeType
@@ -392,18 +400,20 @@ class Profiler(BaseProfiler):
     before_root_func: BeforeType
     after_root_func: AfterType
 
-    def dict_config(self, settings: dict[str, typing.Any]) -> None:
-        from . import config as phanos_config
+    def __init__(self, base_profiler: Profiler) -> None:
+        self.base_profiler = base_profiler
+        self.tree = base_profiler.tree
+        self.metrics = base_profiler.metrics
+        self.time_profile = base_profiler.time_profile
+        self.resp_size_profile = base_profiler.resp_size_profile
+        self.handlers = base_profiler.handlers
 
-        self._dict_cfg_sync(settings)
-        if "handlers" in settings:
-            try:
-                named_handlers = phanos_config.create_handlers(settings["handlers"])
-            except UnsupportedHandler:
-                self.error(f"Cannot create async handler in sync profiler")
-                raise
-            for handler in named_handlers.values():
-                self.add_handler(handler)
+        self.before_func = base_profiler.before_func
+        self.after_func = base_profiler.after_func
+        self.before_root_func = base_profiler.before_root_func
+        self.after_root_func = base_profiler.after_root_func
+
+        super().__init__(logger=base_profiler.logger)
 
     def handle_records_clear(self) -> None:
         for metric in self.metrics.values():
@@ -424,7 +434,7 @@ class Profiler(BaseProfiler):
         @wraps(func)
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync profiling"""
-            if not self.needs_profiling():
+            if not self.base_profiler.needs_profiling():
                 return func(*args, **kwargs)  # this stays
 
             result = None
@@ -440,7 +450,7 @@ class Profiler(BaseProfiler):
         @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async profiling"""
-            if not self.needs_profiling():
+            if not self.base_profiler.needs_profiling():
                 return await func(*args, **kwargs)
 
             result = None
@@ -459,14 +469,14 @@ class Profiler(BaseProfiler):
 
     def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
         """Method for handling before function profiling chores"""
-        current_node = self.set_curr_node(func)
+        current_node = self.base_profiler.set_curr_node(func)
         if current_node.parent == self.tree.root:
             if callable(self.before_root_func):
                 self.before_root_func(func, args, kwargs)
             # place for phanos before root profiling, if it will be needed
         if callable(self.before_func):
             self.before_func(func, args, kwargs)
-        return self.measure_execution_start()
+        return self.base_profiler.measure_execution_start()
 
     def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
         if self.time_profile:
@@ -485,32 +495,51 @@ class Profiler(BaseProfiler):
                 self.after_root_func(result, args, kwargs)
             self.handle_records_clear()
 
-        if self.get_records_count() >= 20:
+        if self.base_profiler.get_records_count() >= 20:
             self.handle_records_clear()
 
-        self.delete_curr_node(current_node)
+        self.base_profiler.delete_curr_node(current_node)
 
 
-class AsyncProfiler(BaseProfiler):
-    async def dict_config(self, settings: dict[str, typing.Any]) -> None:
-        from . import config as phanos_config
+class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
+    base_profiler: Profiler
 
-        self._dict_cfg_sync(settings)
-        if "handlers" in settings:
-            named_handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
-            named_handlers = await phanos_config.create_async_handlers(settings["handlers"])
-            for handler in named_handlers.values():
-                self.add_handler(handler)
+    tree: ContextTree
+    metrics: typing.Dict[str, MetricWrapper]
+    time_profile: typing.Optional[TimeProfiler]
+    resp_size_profile: typing.Optional[ResponseSize]
+    handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
+
+    # space for user specific profiling logic
+    before_func: BeforeType
+    after_func: AfterType
+    before_root_func: BeforeType
+    after_root_func: AfterType
+
+    def __init__(self, base_profiler: Profiler) -> None:
+        self.base_profiler = base_profiler
+        self.tree = base_profiler.tree
+        self.metrics = base_profiler.metrics
+        self.time_profile = base_profiler.time_profile
+        self.resp_size_profile = base_profiler.resp_size_profile
+        self.handlers = base_profiler.handlers
+
+        self.before_func = base_profiler.before_func
+        self.after_func = base_profiler.after_func
+        self.before_root_func = base_profiler.before_root_func
+        self.after_root_func = base_profiler.after_root_func
+
+        super().__init__(logger=base_profiler.logger)
 
     def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
         @wraps(func)
         def sync_inner(*args, **kwargs) -> typing.Any:
             """sync profiling"""
-            if not self.needs_profiling():
+            if not self.base_profiler.needs_profiling():
                 return func(*args, **kwargs)
 
             result = None
-            _ = self.set_curr_node(func)# TODO: maybe pass current node to before_function_handling
+            _ = self.base_profiler.set_curr_node(func)  # TODO: maybe pass current node to before_function_handling
             start_ts = self.before_func_profiling(func, args, kwargs)
             try:
                 result: typing.Any = func(*args, **kwargs)
@@ -518,17 +547,17 @@ class AsyncProfiler(BaseProfiler):
                 raise
             finally:
                 self.after_function_profiling(result, start_ts, args, kwargs)
-                self.delete_curr_node(curr_node.get())
+                self.base_profiler.delete_curr_node(curr_node.get())
             return result
 
         @wraps(func)
         async def async_inner(*args, **kwargs) -> typing.Any:
             """async profiling"""
-            if not self.needs_profiling():
+            if not self.base_profiler.needs_profiling():
                 return await func(*args, **kwargs)
 
             result = None
-            _ = self.set_curr_node(func)
+            _ = self.base_profiler.set_curr_node(func)
             start_ts = self.before_func_profiling(func, args, kwargs)
             try:
                 result: typing.Any = await func(*args, **kwargs)
@@ -550,12 +579,12 @@ class AsyncProfiler(BaseProfiler):
             # place for phanos before root profiling, if it will be needed
         if callable(self.before_func):
             self.before_func(func, args, kwargs)
-        return self.measure_execution_start()
+        return self.base_profiler.measure_execution_start()
 
     async def handle_records(self, current_node: MethodTreeNode) -> None:
-        if current_node.parent is self.tree.root or self.get_records_count() >= 20:
+        if current_node.parent is self.tree.root or self.base_profiler.get_records_count() >= 20:
             await self.handle_records_clear()
-        self.delete_curr_node(current_node)
+        self.base_profiler.delete_curr_node(current_node)
 
     def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
         if self.time_profile:
