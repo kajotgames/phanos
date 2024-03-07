@@ -27,6 +27,10 @@ class TestProfiler(unittest.TestCase):
         mock_size.assert_called_once()
         mock_time.assert_called_once()
 
+    def test_async_config(self):
+        ...
+        # TODO:
+
     def test_create_profilers(self):
         self.profiler.metrics = {}
         self.profiler.time_profile = None
@@ -107,6 +111,25 @@ class TestProfiler(unittest.TestCase):
         self.profiler.delete_handlers()
         self.assertEqual(len(self.profiler.handlers), 0)
 
+    def test_set_error_raised(self):
+        self.profiler.time_profile.label_names = {"some_value"}
+        self.profiler.error_raised_label = False
+        for metric in self.profiler.metrics.values():
+            self.assertNotIn("error_raised", metric.label_names)
+
+        self.profiler.error_raised_label = True
+        for metric in self.profiler.metrics.values():
+            self.assertIn("error_raised", metric.label_names)
+
+
+class TestSyncProfilerExt(unittest.TestCase):
+    def setUp(self):
+        self.profiler = Profiler()
+        self.profiler.config(request_size_profile=True)
+
+    def tearDown(self):
+        self.profiler = None
+
     @patch("phanos.publisher.MetricWrapper.to_records")
     @patch("phanos.publisher.MetricWrapper.cleanup")
     def test_handle_records_clear(self, cleanup: MagicMock, to_records: MagicMock):
@@ -130,12 +153,9 @@ class TestProfiler(unittest.TestCase):
         mock_handle.assert_called_once()
         mock_clear.assert_called_once()
 
-    def test_set_error_raised(self):
-        self.profiler.time_profile.label_names = {"some_value"}
-        self.profiler.error_raised_label = False
-        for metric in self.profiler.metrics.values():
-            self.assertNotIn("error_raised", metric.label_names)
+    # TODO: test rest
 
-        self.profiler.error_raised_label = True
-        for metric in self.profiler.metrics.values():
-            self.assertIn("error_raised", metric.label_names)
+
+class TestAsyncProfilerExt(unittest.TestCase):
+    ...
+    # TODO: test async profiler

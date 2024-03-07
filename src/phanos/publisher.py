@@ -58,10 +58,22 @@ class AbstractExtProfiler(ABC):
 
     @abstractmethod
     def async_inner(self, func, *args, **kwargs) -> typing.Any:
+        """Profiling behaviour for async functions
+
+        :param func: function to profile
+        :param args: function arguments
+        :param kwargs: function keyword arguments
+        """
         raise NotImplementedError
 
     @abstractmethod
     def sync_inner(self, func, *args, **kwargs) -> typing.Any:
+        """Profiling behaviour for sync functions
+
+        :param func: function to profile
+        :param args: function arguments
+        :param kwargs: function keyword arguments
+        """
         raise NotImplementedError
 
 
@@ -142,8 +154,8 @@ class Profiler(log.InstanceLoggerMixin):
         if "handlers" in settings:
             try:
                 named_handlers = phanos_config.create_handlers(settings["handlers"])
-            except UnsupportedHandler:
-                self.error(f"Cannot create async handler in sync profiler")
+            except ValueError:
+                self.error("Cannot create async handler in sync profiler")
                 raise
             for handler in named_handlers.values():
                 self.add_handler(handler)
@@ -619,6 +631,12 @@ class AsyncBaseHandler(BaseHandler, ABC):
     @classmethod
     @abstractmethod
     async def create(cls, handler_name: str, *args, **kwargs) -> AsyncBaseHandler:
+        """AsyncBaseHandler factory method, used for asynchronous handler creation
+
+        :param handler_name: name of handler. used for managing handlers
+        :param args: other positional arguments
+        :param kwargs: other keyword arguments
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -627,6 +645,11 @@ class AsyncBaseHandler(BaseHandler, ABC):
         records: typing.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
+        """Handle records asynchronously
+
+        :param records: list of records to handle
+        :param profiler_name: name of profiler
+        """
         raise NotImplementedError
 
 
@@ -637,6 +660,11 @@ class SyncBaseHandler(BaseHandler, ABC):
         records: typing.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
+        """Handle records
+
+        :param records: list of records to handle
+        :param profiler_name: name of profiler
+        """
         raise NotImplementedError
 
 
@@ -666,7 +694,7 @@ def log_error_profiling(
         logger.debug(out)
 
 
-class SyncImpProfHandler(SyncBaseHandler):
+class ImpProfHandler(SyncBaseHandler):
     """Blocking RabbitMQ record handler"""
 
     publisher: BlockingPublisher
@@ -798,6 +826,7 @@ class AsyncImpProfHandler(AsyncBaseHandler):
             logger=logger,
             **kwargs,
         )
+        self.formatter = OutputFormatter()
 
     @classmethod
     async def create(
@@ -868,7 +897,6 @@ class AsyncImpProfHandler(AsyncBaseHandler):
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
         await self.publisher.close()
-        self.formatter = OutputFormatter()
         self.logger.info("ImpProfHandler created successfully")
 
     async def handle(

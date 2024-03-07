@@ -34,11 +34,17 @@ if __name__ == "__main__":
         test_tree.TestMethodTreeNode,
         test_config.TestConfig,
         test_handlers.TestOutputFormatter,
+        test_handlers.TestImpProfHandler,
+        test_handlers.TestAsyncImpProfHandler,
         test_handlers.TestHandlers,
         test_metrics.TestStoreOperationDecorator,
         test_metrics.TestMetrics,
-        test_messaging.TestMessaging,
+        test_messaging.TestBlockingPublisher,
+        test_messaging.TestBasePublisher,
+        test_messaging.TestAsyncPublisher,
         test_publisher.TestProfiler,
+        test_publisher.TestSyncProfilerExt,
+        test_publisher.TestAsyncProfilerExt,
     ]
     loader = unittest.TestLoader()
     class_suites = []

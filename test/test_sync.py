@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 import phanos
 from phanos import publisher
 from src.phanos import phanos_profiler
-from phanos.publisher import StreamHandler, SyncImpProfHandler
+from phanos.publisher import StreamHandler, ImpProfHandler
 from test import testing_data, dummy_api, common
 from test.dummy_api import app, DummyDbAccess
 from src.phanos.metrics import (
@@ -204,7 +204,7 @@ class TestProfiling(unittest.TestCase):
         handler.setLevel(10)
         logger.addHandler(handler)
 
-        handler = SyncImpProfHandler("imp", logger=logger)
+        handler = ImpProfHandler("imp", logger=logger)
         phanos_profiler.add_handler(handler)
         publisher_instance = MagicMock()
         publisher_instance.execute.return_value = "testing"

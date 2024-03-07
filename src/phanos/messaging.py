@@ -1,7 +1,7 @@
 import logging
 import time
 import typing
-from abc import ABC
+from abc import ABC, abstractmethod
 
 import aio_pika
 import orjson
@@ -32,11 +32,7 @@ NETWORK_ERRORS = (
 )
 
 
-# TODO: make wrapper for BlockingConnection and AbstractRobustConnection?
-#       Need to make abstractmethods?
-
-
-class BasePublisher:
+class BasePublisher(ABC):
     __slots__ = (
         "exchange_name",
         "exchange_type",
@@ -90,9 +86,8 @@ class BasePublisher:
             mechanism for informing client app about the closed connection (
             e.g., on_close_callback or ConnectionClosed exception) with
             `reason_code` of `InternalCloseReasons.BLOCKED_CONNECTION_TIMEOUT`.
-        :param kwargs: other connection params, like `timeout goes here`
+        :param kwargs: other connection params, like `tcp_options` goes here
         """
-        _ = kwargs
         self.logger = logger or logging.getLogger(__name__)
         self.connection = None
         self.channel = None
@@ -110,16 +105,39 @@ class BasePublisher:
             connection_attempts=max(1, self.retry),
             retry_delay=retry_delay,
             blocked_connection_timeout=timeout,
+            **kwargs,
         )
 
     def __bool__(self) -> bool:
+        """Is publisher connected?"""
         return self.is_connected() and self._is_bound()
 
     def is_connected(self) -> bool:
+        """Connection is established?"""
         return not (self.connection is None or self.connection.is_closed)
 
     def _is_bound(self) -> bool:
+        """Channel is established?"""
         return not (self.channel is None or self.channel.is_closed)
+
+    @abstractmethod
+    def connect(self) -> None:
+        """Connect to RabbitMQ"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close connection to RabbitMQ"""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def publish(self, records: typing.List[types.Record]) -> bool:
+        """
+        Push records to message queue.
+        :param records: list of records dict
+        :return: was record queued?
+        """
+        raise NotImplementedError()
 
 
 class BlockingPublisher(BasePublisher):
@@ -138,7 +156,7 @@ class BlockingPublisher(BasePublisher):
         self.logger.info(f"{type(self).__qualname__} - closed connection")
 
     def connect(self) -> None:
-        self.connection = pika.BlockingConnection(self.connection_parameters)
+        self.connection = BlockingConnection(self.connection_parameters)
         self.channel = self.connection.channel()
         self.channel.exchange_declare(
             exchange=self.exchange_name,
@@ -158,16 +176,11 @@ class BlockingPublisher(BasePublisher):
             self.logger.warning(f"{type(self).__qualname__} - connection failed on {e!r}")
 
     def check_or_rebound(self) -> None:
+        """Check if connection is established, if not - reconnect."""
         if not self:
-            self.close()
-            self.connect()
+            self.reconnect()
 
     def publish(self, records: typing.List[types.Record]) -> bool:
-        """
-        Push record to message queue.
-        :param records: list of records dict
-        :return: was record queued?
-        """
         if not records:
             return True
         attempts_left = 1 + self.retry
@@ -196,7 +209,7 @@ class BlockingPublisher(BasePublisher):
 class AsyncioPublisher(BasePublisher):
     """Simple blocking AMQP consumer"""
 
-    __slots__ = ("exchange",)
+    __slots__ = BasePublisher.__slots__ + ("exchange",)
     connection: typing.Optional[AbstractRobustConnection]
     channel: typing.Optional[AbstractRobustChannel]
     exchange: typing.Optional[AbstractRobustExchange]
@@ -241,15 +254,9 @@ class AsyncioPublisher(BasePublisher):
 
     async def check_or_rebound(self) -> None:
         if not self:
-            await self.close()
-            await self.connect()
+            await self.reconnect()
 
     async def publish(self, records: typing.List[types.Record]) -> bool:
-        """
-        Push record to message queue.
-        :param records: List record dict
-        :return: was record queued?
-        """
         if not records:
             return True
         attempts_left = 1 + self.retry
