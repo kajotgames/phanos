@@ -36,10 +36,6 @@ BeforeType = typing.Optional[
 AfterType = typing.Optional[typing.Callable[[typing.Any, typing.List[typing.Any], typing.Dict[str, typing.Any]], None]]
 
 
-class UnsupportedHandler(Exception):
-    pass
-
-
 class AbstractExtProfiler(ABC):  # pragma: no cover
     @abstractmethod
     def handle_records_clear(self) -> None:

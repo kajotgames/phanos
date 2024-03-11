@@ -8,6 +8,18 @@ from src.phanos.tree import MethodTreeNode, ContextTree
 from test import dummy_api
 
 
+def construct_tree():
+    """Construct tree for testing purposes. Returns tree, root, child1, child2."""
+    ctx_tree = ContextTree()
+    node = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
+    ctx_tree.root.add_child(node)
+    child1 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
+    node.add_child(child1)
+    child2 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
+    node.add_child(child2)
+    return ctx_tree, node, child1, child2
+
+
 class TestContext(unittest.TestCase):
     def test_init(self):
         ctx = tree.Context(dummy_api.DummyDbAccess.test_method)
@@ -16,13 +28,14 @@ class TestContext(unittest.TestCase):
         self.assertEqual(ctx.top_module, "test")
 
     def test_str_and_repr(self):
-        ctx = tree.Context(dummy_api.DummyDbAccess.test_method)
-        self.assertEqual(str(ctx), "test_method")
-        self.assertEqual(repr(ctx), "'test_method'")
-
-        ctx = tree.Context()
-        self.assertEqual(str(ctx), "")
-        self.assertEqual(repr(ctx), "''")
+        with self.subTest("METHOD"):
+            ctx = tree.Context(dummy_api.DummyDbAccess.test_method)
+            self.assertEqual(str(ctx), "test_method")
+            self.assertEqual(repr(ctx), "'test_method'")
+        with self.subTest("ROOT"):
+            ctx = tree.Context()
+            self.assertEqual(str(ctx), "")
+            self.assertEqual(repr(ctx), "''")
 
     def test_prepend_method_class(self):
         with self.subTest("METHOD FROM CLASS"):
@@ -60,9 +73,6 @@ class TestContext(unittest.TestCase):
             ctx.prepend_method_class()
             self.assertEqual(ctx.value, "dummy_api:test_decorator")
 
-        with self.subTest("PROPERTY"):
-            pass  # TODO
-
 
 class TestMethodTreeNode(unittest.TestCase):
     def test_init(self):
@@ -98,18 +108,13 @@ class TestContextTree(unittest.TestCase):
         self.assertEqual(ctx_tree.root.ctx.value, "")
 
     def test_delete_node(self):
-        ctx_tree = ContextTree()
-        node = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        ctx_tree.root.add_child(node)
-        child1 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child1)
-        child2 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child2)
+        ctx_tree, node, child1, child2 = construct_tree()
         # -2 because 1 ref is in getrefcount call and one is above. We care about ref in root.parent
         self.assertEqual(sys.getrefcount(node) - 2, 1)
         # 1 child1.parent and child2.parent are same weakref
         self.assertEqual(len(weakref.getweakrefs(node)), 1)
         self.assertEqual(child1.parent, child2.parent)
+
         ctx_tree.delete_node(node)
 
         self.assertEqual(ctx_tree.root.children, [child1, child2])
@@ -120,13 +125,8 @@ class TestContextTree(unittest.TestCase):
 
     @patch("src.phanos.tree.ContextTree.delete_node")
     def test_find_and_delete_node(self, mock_delete_node: MagicMock):
-        ctx_tree = ContextTree()
-        node = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        ctx_tree.root.add_child(node)
-        child1 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child1)
-        child2 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child2)
+        ctx_tree, node, child1, child2 = construct_tree()
+
         with self.subTest("FOUND"):
             self.assertTrue(ctx_tree.find_and_delete_node(node))
             mock_delete_node.assert_called_with(node)
@@ -143,14 +143,12 @@ class TestContextTree(unittest.TestCase):
     @patch("src.phanos.tree.ContextTree.delete_node")
     def test_clear_tree(self, mock_delete_node: MagicMock):
         """Check method for tree clearing"""
-        ctx_tree = ContextTree()
-        node = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        ctx_tree.root.add_child(node)
-        child1 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child1)
-        child2 = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
-        node.add_child(child2)
+        ctx_tree, node, child1, child2 = construct_tree()
 
         ctx_tree.clear()
         self.assertEqual(mock_delete_node.call_count, 3)
-        self.assertIsNotNone(ctx_tree.root)
+
+        call_nodes = [call[0][0] for call in mock_delete_node.call_args_list]
+        self.assertIn(node, call_nodes)
+        self.assertIn(child1, call_nodes)
+        self.assertIn(child2, call_nodes)

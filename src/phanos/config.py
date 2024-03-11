@@ -3,7 +3,6 @@ import importlib
 import inspect
 import typing
 
-from src import phanos
 import phanos.publisher
 
 """

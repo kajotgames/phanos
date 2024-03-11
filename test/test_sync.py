@@ -39,75 +39,41 @@ class TestProfiling(unittest.TestCase):
         self.output.close()
 
     def test_profiling(self):
-        # do not handle records
         phanos_profiler.handle_records = False
-        _ = self.client.get("http://localhost/api/dummy/one")
-        self.output.seek(0)
-        lines = self.output.readlines()
-        self.assertEqual(lines, [])
+        with self.subTest("DO NOT HANDLE"):
+            _ = self.client.get("http://localhost/api/dummy/one")
+            self.output.seek(0)
+            lines = self.output.readlines()
+            self.assertEqual(lines, [])
 
-        # test of api call inside same api call with error risen
         phanos_profiler.handle_records = True
-        _ = self.client.post("http://localhost/api/dummy/one")
-        self.output.seek(0)
-        self.assertEqual(len(self.output.readlines()), 4)
-        self.output.truncate(0)
-        self.output.seek(0)
-        # cleanup assertion
-        for metric in phanos_profiler.metrics.values():
-            self.assertEqual(metric.values, [])
-            self.assertEqual(metric.label_values, [])
-            self.assertEqual(metric.method, [])
+        with self.subTest("PROFILING OUTPUT"):
+            # profiling after request, where error_occurred
+            _ = self.client.get("http://localhost/api/dummy/one")
+            self.output.seek(0)
+            lines = self.output.readlines()
+            methods, values, _ = common.parse_output(lines)
 
-        # profiling after request, where error_occurred
-        _ = self.client.get("http://localhost/api/dummy/one")
-        self.output.seek(0)
-        lines = self.output.readlines()
-        time_lines = lines[:-1]
-        size_line = lines[-1]
-        for i in range(len(time_lines)):
-            line = time_lines[i][:-1]
-            value = line.split("value: ")[1][:-3]
-            self.assertEqual(
-                (float(value)) // 100,
-                testing_data.profiling_out[i]["value"],
-            )
-            method = line.split(", ")[1][8:]
-            self.assertEqual(
-                method,
-                testing_data.profiling_out[i]["method"],
-            )
-
-        size_line = size_line[:-1]
-        value = size_line.split("value: ")[1][:-2]
-        self.assertEqual(
-            (float(value)),
-            testing_data.profiling_out[-1]["value"],
-        )
-        method = size_line.split(", ")[1][8:]
-        self.assertEqual(
-            method,
-            testing_data.profiling_out[-1]["method"],
-        )
-
-        self.assertEqual(phanos_profiler.tree.root.children, [])
+            self.assertEqual(methods, testing_data.profiling_out_methods)
+            self.assertEqual(values, testing_data.profiling_out_values)
+            self.assertEqual(phanos_profiler.tree.root.children, [])
 
         access = dummy_api.DummyDbAccess()
         self.output.truncate(0)
         self.output.seek(0)
-
         # error raised tree and metrics should be raised normally and error should be reraised
-        self.assertRaises(RuntimeError, access.raise_access)
-        self.output.seek(0)
-        self.assertEqual(len(self.output.readlines()), 3)
+        with self.subTest("ERROR RE RAISED"):
+            self.assertRaises(RuntimeError, access.raise_access)
+            self.output.seek(0)
+            self.assertEqual(len(self.output.readlines()), 3)
 
-        # cleanup assertion
-        for metric in phanos_profiler.metrics.values():
-            self.assertEqual(metric.values, [])
-            self.assertEqual(metric.label_values, [])
-            self.assertEqual(metric.method, [])
+            # cleanup assertion
+            for metric in phanos_profiler.metrics.values():
+                self.assertEqual(metric.values, [])
+                self.assertEqual(metric.label_values, [])
+                self.assertEqual(metric.method, [])
 
-        self.assertEqual(phanos_profiler.tree.root.children, [])
+            self.assertEqual(phanos_profiler.tree.root.children, [])
 
     def test_custom_profile_addition(self):
         hist = Histogram("test_name", "TEST", "test_units", {"place"})
@@ -121,10 +87,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = func
-            hist.observe(
-                1.0,
-                {"place": "before_root"},
-            )
+            hist.observe(1.0, {"place": "before_root"})
 
         phanos_profiler.before_root_func = before_root_func
 
@@ -132,10 +95,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = func
-            hist.observe(
-                2.0,
-                {"place": "before_func"},
-            )
+            hist.observe(2.0, {"place": "before_func"})
 
         phanos_profiler.before_func = before_func
 
@@ -143,10 +103,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.observe(
-                3.0,
-                {"place": "after_func"},
-            )
+            hist.observe(3.0, {"place": "after_func"})
 
         phanos_profiler.after_func = after_func
 
@@ -154,10 +111,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.observe(
-                4.0,
-                {"place": "after_root"},
-            )
+            hist.observe(4.0, {"place": "after_root"})
 
         phanos_profiler.after_root_func = after_root_func
 

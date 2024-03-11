@@ -1,25 +1,11 @@
-profiling_out = [
-    {
-        "method": "DummyResource:get.first_access",
-        "value": 2.0,
-    },
-    {
-        "method": "DummyResource:get.second_access.first_access",
-        "value": 2.0,
-    },
-    {
-        "method": "DummyResource:get.second_access",
-        "value": 5.0,
-    },
-    {
-        "method": "DummyResource:get",
-        "value": 7.0,
-    },
-    {
-        "method": "DummyResource:get",
-        "value": 56.0,
-    },
+profiling_out_methods = [
+    "DummyResource:get.first_access",
+    "DummyResource:get.second_access.first_access",
+    "DummyResource:get.second_access",
+    "DummyResource:get",
+    "DummyResource:get",
 ]
+profiling_out_values = [200, 200, 500, 700, 56]
 
 
 test_handler_in_no_lbl = {
@@ -189,7 +175,7 @@ test_await_out_methods = [
     "AsyncTest:await_test.async_access_short",
     "AsyncTest:await_test.async_access_short",
 ]
-test_await_out_values = [2.0, 2.0, 3.0, 3.0, 5.0, 5.0]
+test_await_out_values = [200, 200, 300, 300, 500, 500]
 
 test_task_out_methods = [
     "AsyncTest:async_access_short",
@@ -198,7 +184,7 @@ test_task_out_methods = [
     "AsyncTest:task_test.task_nested",
     "AsyncTest:task_test.task_nested.async_access_short",
 ]
-test_task_out_values = [2.0, 3.0, 3.0, 3.0, 3.0]
+test_task_out_values = [200, 300, 300, 300, 300]
 
 test_mix_out_methods = [
     "AsyncTest:test_mix",
@@ -212,7 +198,7 @@ test_mix_out_methods = [
     "AsyncTest:test_mix.task_test.task_nested.async_access_short",
 ]
 
-test_mix_out_values = [2.0, 2.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 6.0]
+test_mix_out_values = [200, 200, 300, 300, 300, 300, 300, 300, 600]
 
 
 sync_in_async_methods = [
@@ -221,7 +207,7 @@ sync_in_async_methods = [
     "AsyncTest:sync_in_async.sync_access_long",
     "AsyncTest:sync_in_async.sync_access_long",
 ]
-sync_in_async_values = [2.0, 2.0, 2.0, 2.0]
+sync_in_async_values = [200, 200, 200, 200]
 
 error_flag_out = [
     ("DummyResource:post.delete.put", "error_raised=True"),

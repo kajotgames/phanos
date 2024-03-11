@@ -10,8 +10,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 
+ - `Profiler.async_config`, `Profiler.async_dict_config` to support async handlers
+ - `AsyncImpProfHandler` for non-blocking messaging
+
+
 ### Changed
- - RabbitMQ publisher is now async
+ - `Profiler` functionality for handling records and profiling moved to `SyncExtProfiler` and `AsyncExtProfiler`
  - `MetricWrapper.label_names` are now `Set` instead of `List`
  - `StoreOperationDecorator` no longer raises `ValueError` when input of `operation` is not valid, 
 now it is logged as warning and record is ignored

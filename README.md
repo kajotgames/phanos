@@ -35,9 +35,13 @@ if no handlers specified then no measurements are made; for handlers description
   - `handler_name` handler name required argument of publishers
   - `**other arguments` - specific arguments required to construct instance of class f.e.: `output`.
 
+With addition of async handlers, `async_config` and `async_dict_config` methods were added to `Profiler` class.
+Be wary that `config` and `dict_config` methods ARE NOT compatible with async handlers, but `async_config` and
+`async_dict_config` ARE compatible with sync handlers.
+
 #### Dict Configuration
-It is possible to configure profile with configration dictionary with method `Profiler.dict_config(settings)` 
-_(similar to `logging` `dictConfig`)_.
+It is possible to configure profile with configration dictionary with method `Profiler.dict_config(settings)` or 
+`Profiler.async_dict_config(settings)` for usage with async handlers.  _(similar to `logging` `dictConfig`)_.
 
 Example of configuration dict:
 
@@ -61,20 +65,20 @@ settings = {
 
 #### Configuration in code
     
-When configuring in code use `Profiler.config` method  to configure profiling.
+When configuring in code use `Profiler.config` or ``Profiler.async_config`` method  to configure profiling.
 For handler addition create handler instance first and add it to profiler with `Profiler.add_handler` method.
 
 Example of configuration:
 
 ```python      
     import phanos
-    # some code
+    
     class SomeApp(Flask):
         """some code""" 
         phanos.profiler.config(logger, time_profile, resp_size_profile, handle_records, error_raised_label)
         log_handler = phanos.handlers.LoggerHandler('handler_name', logger_instance, logging_level)
         phanos.profiler.add_handler(log_handler)    
-        # some code
+        
 ```
 
 ### Usage
@@ -114,7 +118,8 @@ Records can be handled by these handlers:
 level; default level is `logging.DEBUG`; if no logger is passed, Phanos creates its own logger
  - `NamedLoggerHandler(handler_name, logger_name, level)` - same as LoggerHandler, but `logger` instance is found by 
 `logging.getLogger(logger_name)` method.
- - `ImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue.
+ - `ImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue - blocking.
+ - `AsyncImpProfHandler(handler_name, **rabbit_connection_params, logger)` - sending records to RabbitMQ queue - async.
 
 ## Phanos metrics:
 
@@ -134,7 +139,7 @@ allowed operations, refer to [Prometheus documentation](https://prometheus.io/do
 ### Custom metrics
 
  - `time profiler`: metric for measuring time-consuming actions in mS; basically Histogram metric of Prometheus.
- - `response size profiler`: metric for measuring return value of method in bytes, designed to measure response 
+ - `response size profiler`: metric for measuring size of return value of method in bytes, designed to measure response 
 size of endpoints; basically Histogram metric of Prometheus.
 
     
@@ -144,7 +149,7 @@ size of endpoints; basically Histogram metric of Prometheus.
 - new metric class needs to inherit from one of basic Prometheus metrics.
 - `__init__()` method needs to call `super().__init__()`
 - implement method for each operation wanted; this method must call one of inherited metrics operations if you want
-operation to be saved f.e. `Gauge.dec`;
+operation to be stored f.e. `Gauge.dec`;
 - `MetricWrapper.cleanup()` is called after all measured metrics are handled; if custom cleanup is needed, 
 implement method `cleanup()` calling `super().cleanup()` inside
 
@@ -204,7 +209,7 @@ What must/can be done:
 `labels` and `logger` are optional
 - custom measurements
   - `before_*` functions must have `func` argument, where function which is executed is passed.
-`after_*` function needs to have `fn_result` argument where function result is passed
+`after_*` function needs to have `result` argument where function result is passed
   - all four functions can access `args` and `kwargs` of decorated methods. These arguments are passed
 in packed form.
 
