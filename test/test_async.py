@@ -92,7 +92,7 @@ class TestAsyncProfile(unittest.IsolatedAsyncioTestCase):
     async def test_task_wo_await(self):
         async_access = dummy_api.AsyncTest()
         loop = asyncio.get_event_loop()
-        loop.create_task(async_access.wo_await())
+        await loop.create_task(async_access.wo_await())
         # wait for tasks to finish
         await asyncio.sleep(0.4)
         self.output.seek(0)

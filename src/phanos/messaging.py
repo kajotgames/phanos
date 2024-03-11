@@ -121,17 +121,17 @@ class BasePublisher(ABC):
         return not (self.channel is None or self.channel.is_closed)
 
     @abstractmethod
-    def connect(self) -> None:
+    def connect(self) -> None:  # pragma: no cover
         """Connect to RabbitMQ"""
         raise NotImplementedError()
 
     @abstractmethod
-    def close(self) -> None:
+    def close(self) -> None:  # pragma: no cover
         """Close connection to RabbitMQ"""
         raise NotImplementedError()
 
     @abstractmethod
-    def publish(self, records: typing.List[types.Record]) -> bool:
+    def publish(self, records: typing.List[types.Record]) -> bool:  # pragma: no cover
         """
         Push records to message queue.
         :param records: list of records dict

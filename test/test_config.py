@@ -100,6 +100,21 @@ class TestConfig(unittest.IsolatedAsyncioTestCase):
         self.assertIn(HANDLER_NAME, _test_profiler.handlers)
         self.assertTrue(_test_profiler.resp_size_profile)
 
+        SETTING_DICT["handlers"] = ASYNC_HANDLERS_DICT
+        with self.assertRaises(ValueError):
+            _test_profiler.dict_config(SETTING_DICT)
+        SETTING_DICT["handlers"] = SYNC_HANDLERS_DICT
+
+    async def test_async_dict_config(self):
+        _test_profiler = phanos.publisher.Profiler()
+        try:
+            await _test_profiler.async_dict_config(SETTING_DICT)
+        except (KeyError, ValueError, IndexError, Exception) as e:
+            self.assertIsNone(e)
+        self.assertIsInstance(_test_profiler.handlers[HANDLER_NAME], phanos.publisher.StreamHandler)
+        self.assertIn(HANDLER_NAME, _test_profiler.handlers)
+        self.assertTrue(_test_profiler.resp_size_profile)
+
     def test_job_missing(self):
         _test_profiler = phanos.publisher.Profiler()
         no_job = SETTING_DICT.copy()

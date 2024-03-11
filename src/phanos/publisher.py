@@ -40,7 +40,7 @@ class UnsupportedHandler(Exception):
     pass
 
 
-class AbstractExtProfiler(ABC):
+class AbstractExtProfiler(ABC):  # pragma: no cover
     @abstractmethod
     def handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
@@ -99,6 +99,9 @@ class Profiler(log.InstanceLoggerMixin):
     after_root_func: AfterType
 
     profile_ext: typing.Optional[typing.Union[AsyncExtProfiler, SyncExtProfiler]]
+
+    RECORDS_ERR_LIMIT = 3000
+    RECORDS_LEN_LIMIT = 100
 
     def __init__(self) -> None:
         """Initialize Profiler
@@ -235,9 +238,16 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug("Profiler configured successfully")
 
     def async_config(
-        self, logger=None, job: str = "", time_profile: bool = True, handle_records: bool = True, **kwargs
+        self,
+        logger=None,
+        job: str = "",
+        time_profile: bool = True,
+        request_size_profile: bool = False,
+        handle_records: bool = True,
+        error_raised_label: bool = True,
+        **kwargs,
     ):
-        self._config(logger, job, time_profile, handle_records, **kwargs)
+        self._config(logger, job, time_profile, request_size_profile, handle_records, error_raised_label, **kwargs)
         self.profile_ext = AsyncExtProfiler(self)
         self.debug("Profiler configured successfully")
 
@@ -340,7 +350,7 @@ class Profiler(log.InstanceLoggerMixin):
     def add_handler(self, handler: typing.Union[SyncBaseHandler, AsyncBaseHandler]) -> None:
         """Add handler to profiler. If handler.name == existing handler name, existing handler will be overwritten.
 
-        :param handler: handler instance
+        :param handler: handler instanceprofiler_name
         """
         if self.handlers.get(handler.handler_name, None):
             self.warning(
@@ -379,15 +389,10 @@ class Profiler(log.InstanceLoggerMixin):
         return current_node
 
     def delete_curr_node(self, current_node: MethodTreeNode) -> None:
-        if current_node.parent is not None:
-            curr_node.set(current_node.parent)
-            found = self.tree.find_and_delete_node(current_node)
-            if not found:  # this won't happen if nobody messes with tree
-                self.warning(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
-
-        else:  # this won't happen if nobody messes with tree
-            self.error(f"{self.profile.__qualname__}: node {current_node.ctx!r} have no parent.")
-            raise ValueError(f"{current_node.ctx!r} have no parent")
+        curr_node.set(current_node.parent)
+        found = self.tree.find_and_delete_node(current_node)
+        if not found:  # this won't happen if nobody messes with tree
+            self.warning(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
 
     def measure_execution_start(self) -> typing.Optional[datetime]:
         """Measure execution start time and return it"""
@@ -396,6 +401,30 @@ class Profiler(log.InstanceLoggerMixin):
         if self.time_profile:
             start_ts = datetime.now()
         return start_ts
+
+    def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
+        """Method for handling before function profiling chores"""
+        if curr_node.get().parent == self.tree.root:
+            if callable(self.before_root_func):
+                self.before_root_func(func, args, kwargs)
+            # place for phanos before root profiling, if it will be needed
+        if callable(self.before_func):
+            self.before_func(func, args, kwargs)
+        return self.measure_execution_start()
+
+    def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
+        if self.time_profile:
+            self.time_profile.stop(start=start_ts, label_values={})
+        if callable(self.after_func):
+            # users custom metrics profiling after every decorated function if method passed
+            self.after_func(result, args, kwargs)
+        if curr_node.get().parent is self.tree.root:
+            # phanos after root function profiling
+            if self.resp_size_profile:
+                self.resp_size_profile.rec(value=result, label_values={})
+            if callable(self.after_root_func):
+                # users custom metrics profiling after root function if method passed
+                self.after_root_func(result, args, kwargs)
 
     def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
         @wraps(func)
@@ -435,52 +464,27 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         self.handle_records_clear()
         self.base_profiler.tree.clear()
 
-    def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
-        """Method for handling before function profiling chores"""
-        current_node = self.base_profiler.set_curr_node(func)
-        if current_node.parent == self.base_profiler.tree.root:
-            if callable(self.base_profiler.before_root_func):
-                self.base_profiler.before_root_func(func, args, kwargs)
-            # place for phanos before root profiling, if it will be needed
-        if callable(self.base_profiler.before_func):
-            self.base_profiler.before_func(func, args, kwargs)
-        return self.base_profiler.measure_execution_start()
-
-    def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
-        if self.base_profiler.time_profile:
-            self.base_profiler.time_profile.stop(start=start_ts, label_values={})
-        if callable(self.base_profiler.after_func):
-            # users custom metrics profiling after every decorated function if method passed
-            self.base_profiler.after_func(result, args, kwargs)
-
-        current_node = curr_node.get()
-        if current_node.parent is self.base_profiler.tree.root:
-            # phanos after root function profiling
-            if self.base_profiler.resp_size_profile:
-                self.base_profiler.resp_size_profile.rec(value=result, label_values={})
-            if callable(self.base_profiler.after_root_func):
-                # users custom metrics profiling after root function if method passed
-                self.base_profiler.after_root_func(result, args, kwargs)
-            self.handle_records_clear()
-
-        if self.base_profiler.get_records_count() >= 20:
-            self.handle_records_clear()
-
-        self.base_profiler.delete_curr_node(current_node)
-
     def sync_inner(self, func, *args, **kwargs) -> typing.Any:
         """sync profiling"""
         if not self.base_profiler.needs_profiling():
-            return func(*args, **kwargs)  # this stays
+            return func(*args, **kwargs)
 
         result = None
-        start_ts = self.before_func_profiling(func, args, kwargs)  # this stays
+        current_node = self.base_profiler.set_curr_node(func)
+        start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
             result: typing.Any = func(*args, **kwargs)
         except Exception:
             raise
         finally:
-            self.after_function_profiling(result, start_ts, args, kwargs)
+            self.base_profiler.after_function_profiling(result, start_ts, args, kwargs)
+            if (
+                current_node.parent is self.base_profiler.tree.root
+                or self.base_profiler.get_records_count() >= Profiler.RECORDS_LEN_LIMIT
+            ):
+                self.handle_records_clear()
+            self.base_profiler.delete_curr_node(current_node)
+
         return result
 
     async def async_inner(self, func, *args, **kwargs) -> typing.Any:
@@ -489,13 +493,21 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
             return await func(*args, **kwargs)
 
         result = None
-        start_ts = self.before_func_profiling(func, args, kwargs)
+        current_node = self.base_profiler.set_curr_node(func)
+        start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
             result: typing.Any = await func(*args, **kwargs)
         except Exception:
             raise
         finally:
-            self.after_function_profiling(result, start_ts, args, kwargs)
+            self.base_profiler.after_function_profiling(result, start_ts, args, kwargs)
+            if (
+                current_node.parent is self.base_profiler.tree.root
+                or self.base_profiler.get_records_count() >= Profiler.RECORDS_LEN_LIMIT
+            ):
+                self.handle_records_clear()
+            self.base_profiler.delete_curr_node(current_node)
+
         return result
 
 
@@ -506,36 +518,6 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         self.base_profiler = base_profiler
 
         super().__init__(logger=base_profiler.logger)
-
-    def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
-        if curr_node.get().parent == self.base_profiler.tree.root:
-            if callable(self.base_profiler.before_root_func):
-                self.base_profiler.before_root_func(func, args, kwargs)
-            # place for phanos before root profiling, if it will be needed
-        if callable(self.base_profiler.before_func):
-            self.base_profiler.before_func(func, args, kwargs)
-        return self.base_profiler.measure_execution_start()
-
-    async def handle_records(self, current_node: MethodTreeNode) -> None:
-        if current_node.parent is self.base_profiler.tree.root or self.base_profiler.get_records_count() >= 20:
-            await self.handle_records_clear()
-        self.base_profiler.delete_curr_node(current_node)
-
-    def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
-        if self.base_profiler.time_profile:
-            self.base_profiler.time_profile.stop(start=start_ts, label_values={})
-        if callable(self.base_profiler.after_func):
-            # users custom metrics profiling after every decorated function if method passed
-            self.base_profiler.after_func(result, args, kwargs)
-
-        if curr_node.get().parent is self.base_profiler.tree.root:
-            # phanos after root function profiling
-            if self.base_profiler.resp_size_profile:
-                self.base_profiler.resp_size_profile.rec(value=result, label_values={})
-
-            if callable(self.base_profiler.after_root_func):
-                # users custom metrics profiling after root function if method passed
-                self.base_profiler.after_root_func(result, args, kwargs)
 
     async def handle_records_clear(self) -> None:
         for metric in self.base_profiler.metrics.values():
@@ -561,15 +543,20 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
             return func(*args, **kwargs)
 
         result = None
-        _ = self.base_profiler.set_curr_node(func)  # TODO: maybe pass current node to before_function_handling
-        start_ts = self.before_func_profiling(func, args, kwargs)
+        current_node = self.base_profiler.set_curr_node(func)
+        start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
             result: typing.Any = func(*args, **kwargs)
         except Exception:
             raise
         finally:
-            self.after_function_profiling(result, start_ts, args, kwargs)
-            self.base_profiler.delete_curr_node(curr_node.get())
+            self.base_profiler.after_function_profiling(result, start_ts, args, kwargs)
+            if self.base_profiler.get_records_count() >= Profiler.RECORDS_ERR_LIMIT:
+                self.error("Too many records, clearing records")
+                for metric in self.base_profiler.metrics.values():
+                    metric.cleanup()
+            self.base_profiler.delete_curr_node(current_node)
+
         return result
 
     async def async_inner(self, func, *args, **kwargs) -> typing.Any:
@@ -578,15 +565,20 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
             return await func(*args, **kwargs)
 
         result = None
-        _ = self.base_profiler.set_curr_node(func)
-        start_ts = self.before_func_profiling(func, args, kwargs)
+        current_node = self.base_profiler.set_curr_node(func)
+        start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
             result: typing.Any = await func(*args, **kwargs)
         except Exception:
             raise
         finally:
-            self.after_function_profiling(result, start_ts, args, kwargs)
-            await self.handle_records(curr_node.get())
+            self.base_profiler.after_function_profiling(result, start_ts, args, kwargs)
+            if (
+                current_node.parent is self.base_profiler.tree.root
+                or self.base_profiler.get_records_count() >= Profiler.RECORDS_LEN_LIMIT
+            ):
+                await self.handle_records_clear()
+            self.base_profiler.delete_curr_node(current_node)
         return result
 
 
@@ -627,7 +619,7 @@ class BaseHandler(ABC):
         self.handler_name = handler_name
 
 
-class AsyncBaseHandler(BaseHandler, ABC):
+class AsyncBaseHandler(BaseHandler, ABC):  # pragma: no cover
     @classmethod
     @abstractmethod
     async def create(cls, handler_name: str, *args, **kwargs) -> AsyncBaseHandler:
@@ -653,7 +645,7 @@ class AsyncBaseHandler(BaseHandler, ABC):
         raise NotImplementedError
 
 
-class SyncBaseHandler(BaseHandler, ABC):
+class SyncBaseHandler(BaseHandler, ABC):  # pragma: no cover
     @abstractmethod
     def handle(
         self,

@@ -7,12 +7,20 @@ import sys
 import unittest
 from os.path import join, dirname
 
+
+ABSTRACT_CLASSES = [
+    "phanos/publisher.py/SyncBaseHandler",
+    "phanos.publisher.AsyncBaseHandler",
+    "phanos.publisher.BasePublisher",
+    "phanos.publisher.BaseHandler",
+    "phanos.publisher.BaseFormatter",
+]
 src_path = join(join(dirname(__file__), ".."), "")
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
 if __name__ == "__main__":
-    cov = coverage.Coverage(omit=["*/test/*", "*/log.py"])
+    cov = coverage.Coverage(omit=["*/test/*", "*/log.py", *ABSTRACT_CLASSES])
     cov.start()
     # import after cov.start() due to correct coverage report
     from test import (
