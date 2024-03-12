@@ -15,7 +15,7 @@ and `phanos.profiler.delete_metric(phanos.publisher.RESPONSE_SIZE)`.
 
 ### Configuration
 
-There are options of how to configure profiler. Profiler must be configured by one of these options.
+There are two options of how to configure profiler. Profiler must be configured by one of these options.
 
 Both options uses these attributes:
 
@@ -37,7 +37,7 @@ if no handlers specified then no measurements are made; for handlers description
 
 With addition of async handlers, `async_config` and `async_dict_config` methods were added to `Profiler` class.
 Be wary that `config` and `dict_config` methods ARE NOT compatible with async handlers, but `async_config` and
-`async_dict_config` ARE compatible with sync handlers.
+`async_dict_config` ARE compatible with sync handlers, but cannot be used in purely synchronise environment.
 
 #### Dict Configuration
 It is possible to configure profile with configration dictionary with method `Profiler.dict_config(settings)` or 
@@ -50,7 +50,7 @@ settings = {
     "job": "my_app", 
     "logger": "my_app_debug_logger", 
     "time_profile": True, 
-    "request_size_profile": False,
+    "response_size_profile": False,
     "handle_records": True, 
     "error_raised_label": False,
     "handlers": {
@@ -67,17 +67,28 @@ settings = {
     
 When configuring in code use `Profiler.config` or ``Profiler.async_config`` method  to configure profiling.
 For handler addition create handler instance first and add it to profiler with `Profiler.add_handler` method.
+_(Cannot add_handler before profiler configuration)_
 
 Example of configuration:
 
 ```python      
-    import phanos
+import logging
+import phanos
     
-    class SomeApp(Flask):
-        """some code""" 
-        phanos.profiler.config(logger, time_profile, resp_size_profile, handle_records, error_raised_label)
-        log_handler = phanos.handlers.LoggerHandler('handler_name', logger_instance, logging_level)
-        phanos.profiler.add_handler(log_handler)    
+# configuration of profiler and handler addition
+phanos.profiler.config(
+  logger=None, 
+  time_profile=True, 
+  response_size_profile=False, 
+  handle_records=True, 
+  error_raised_label=True,
+)
+log_handler = phanos.publisher.LoggerHandler(
+  'handler_name', 
+  logger=None, 
+  level=logging.INFO
+)
+phanos.profiler.add_handler(log_handler)    
         
 ```
 
@@ -85,7 +96,7 @@ Example of configuration:
 
 - configure profiler as shown in [Configuration](#configuration)
 
-- decorate methods which you want to profile `@phanos.profile` shortcut for `@phanos.profiler.profile`.
+- decorate methods which you want to profile `@phanos.profile`. _(shortcut for `@phanos.profiler.profile`)_.
 Allways put decorator closest to method definition as possible, because the decorator collides with some other
 decorators. The decorator must allways be under `@classmethod`, `@staticmethod`, `flask_restx` 
 decorators and possibly others. 
@@ -109,7 +120,7 @@ class SomeClass:
 
 ## Handlers
 
-Each handler have `handler_name` argument. This string can be used to delete handlers later
+Each handler have `handler_name` attribute. This string can be used to delete handlers later
 with `phanos.profiler.delete_handler(handler_name)`.
 
 Records can be handled by these handlers:
@@ -132,14 +143,14 @@ level; default level is `logging.DEBUG`; if no logger is passed, Phanos creates 
  - Gauge
  - Enum
 
-These classes represent basic Prometheus metrics types. For more information about Prometheus metric types, mainly
-allowed operations, refer to [Prometheus documentation](https://prometheus.io/docs/concepts/metric_types/).
+These classes represent basic Prometheus metrics types. For more information about Prometheus metric types,
+allowed operations, etc. refer to [Prometheus documentation](https://prometheus.io/docs/concepts/metric_types/).
 
 
 ### Custom metrics
 
- - `time profiler`: metric for measuring time-consuming actions in mS; basically Histogram metric of Prometheus.
- - `response size profiler`: metric for measuring size of return value of method in bytes, designed to measure response 
+ - `TimeProfiler`: metric for measuring time-consuming actions in mS; basically Histogram metric of Prometheus.
+ - `ResponseSize`: metric for measuring size of return value of method in bytes, designed to measure response 
 size of endpoints; basically Histogram metric of Prometheus.
 
     
@@ -155,12 +166,12 @@ implement method `cleanup()` calling `super().cleanup()` inside
 
 ### Add metrics automatic measurements
 
-`phanos.profiler` contains these four arguments:
+`phanos.profiler` contains these four attributes:
  
-- before_func : callable - executes before each profiled method/function
-- after_func : callable - executes after each profiled method/function
-- before_root_func : callable - executes before each profiled root method/function (first method in profiling tree)
-- after_root_func : callable - executes after each profiled root method/function (first method in profiling tree)
+- `before_func: Callable[[Callable[..., Any], Tuple[Any, ...], Dict[str, Any]], None]`: executes before each profiled method/function
+- `before_root_func: Callable[[Callable[..., Any], Tuple[Any, ...], Dict[str, Any]], None]`: executes before each profiled root method/function (first method in profiling tree)
+- `after_func: Callable[[Any, Tuple[Any, ...], Dict[str, Any]], None]`: executes after each profiled method/function
+- `after_root_func: Callable[[Any, Tuple[Any, ...], Dict[str, Any]], None]`: executes after each profiled root method/function (first method in profiling tree)
 
 Implement these methods with all needed measurement.
 

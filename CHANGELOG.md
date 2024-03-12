@@ -15,17 +15,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 
 ### Changed
- - `Profiler` functionality for handling records and profiling moved to `SyncExtProfiler` and `AsyncExtProfiler`
+ - `Profiler` functionality for handling records and profiling moved to `SyncExtProfiler` and `AsyncExtProfiler` due
+    to support of async handlers, without breaking changes
  - `MetricWrapper.label_names` are now `Set` instead of `List`
  - `StoreOperationDecorator` no longer raises `ValueError` when input of `operation` is not valid, 
 now it is logged as warning and record is ignored
- - `Profiler.delete_metric` and `Profiler.delete_handler`no longer raising `KeyError`when metric/handler not exists
+ - `Profiler.delete_metric` and `Profiler.delete_handler` no longer raising `KeyError`when metric/handler not exists
 now it is logged as warning 
 
 ### Deprecated
 
 - `request_size_profile` parameter in `Profiler.config()` and `Profiler.dict_config()` is deprecated and will be removed in future versions, use
 `response_size_profile` instead
+- `phanos_profiler` variable is deprecated and will be removed in future versions, use `profiler` instead
 
 
 ## [0.2.2] - 2023-08-18
@@ -46,7 +48,7 @@ now it is logged as warning
 
 ### Added
 
-- if `error_raised_label` set and error raised, profiling will be printed with logger
+- if `error_raised_label` set and error is raised during profiling, profiling will be printed with logger
 - added `error_raised_label` flag into `Profiler.config` and `Profiler.dict_config` if turned
 on, each record have additional label describing if profiled function/method raised error
 - asyncio profiling support
