@@ -434,7 +434,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug(f"Metric {metric.name!r} added to phanos profiler")
 
     def get_records_count(self) -> int:
-        self.records_ = """Get count of records from all metrics.
+        """Get count of records from all metrics.
 
         :returns: count of records
         """
