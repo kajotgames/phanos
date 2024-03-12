@@ -58,11 +58,17 @@ class TestImpProfHandler(unittest.TestCase):
 
     @patch("phanos.publisher.BlockingPublisher")
     def test_init(self, mock_publisher: MagicMock):
-        handler = ImpProfHandler("rabbit")
-        mock_publisher.assert_called_once()
-        mock_publisher.return_value.connect.assert_called_once()
-        mock_publisher.return_value.close.assert_called_once()
-        self.assertIsNotNone(handler.formatter)
+        with self.subTest("no logger"):
+            handler = ImpProfHandler("rabbit")
+            mock_publisher.assert_called_once()
+            mock_publisher.return_value.connect.assert_called_once()
+            mock_publisher.return_value.close.assert_called_once()
+            self.assertIsNotNone(handler.formatter)
+
+        with self.subTest("logger as string"):
+            handler = ImpProfHandler("rabbit", logger="flask.app")
+            self.assertIsInstance(handler.logger, logging.Logger)
+            self.assertEqual(handler.logger.name, "flask.app")
 
     @patch("phanos.publisher.BlockingPublisher")
     def test_invalid_init(self, mock_publisher: MagicMock):
@@ -84,10 +90,16 @@ class TestImpProfHandler(unittest.TestCase):
 class TestAsyncImpProfHandler(unittest.IsolatedAsyncioTestCase):
     @patch("phanos.publisher.AsyncioPublisher")
     async def test_init(self, mock_publisher: MagicMock):
-        handler = AsyncImpProfHandler("rabbit")
-        mock_publisher.assert_called_once()
-        self.assertIsNotNone(handler.publisher)
-        self.assertIsNotNone(handler.formatter)
+        with self.subTest("no logger"):
+            handler = AsyncImpProfHandler("rabbit")
+            mock_publisher.assert_called_once()
+            self.assertIsNotNone(handler.publisher)
+            self.assertIsNotNone(handler.formatter)
+
+        with self.subTest("logger as string"):
+            handler = AsyncImpProfHandler("rabbit", logger="flask.app")
+            self.assertIsInstance(handler.logger, logging.Logger)
+            self.assertEqual(handler.logger.name, "flask.app")
 
     @patch("phanos.publisher.AsyncioPublisher")
     @patch("phanos.publisher.AsyncImpProfHandler._post_init")

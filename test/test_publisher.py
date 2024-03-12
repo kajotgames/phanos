@@ -102,9 +102,22 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
         self.profiler.handlers = {}
         handler = MagicMock()
         handler.handler_name = "test"
-        self.profiler.add_handler(handler)
-        self.profiler.add_handler(handler)
-        self.assertIn("test", self.profiler.handlers)
+        with self.subTest("valid"):
+            self.profiler.add_handler(handler)
+            self.profiler.add_handler(handler)
+            self.assertIn("test", self.profiler.handlers)
+            self.assertEqual(self.profiler.handlers["test"], handler)
+            self.assertEqual(len(self.profiler.handlers), 1)
+
+        with self.subTest("add async handler to sync profiler"):
+            handler = AsyncImpProfHandler("test")
+            with self.assertRaises(ValueError):
+                self.profiler.add_handler(handler)
+
+        self.profiler.profile_ext = None  # simulates that configuration did not happen
+        with self.subTest("not configured"):
+            with self.assertRaises(RuntimeError):
+                self.profiler.add_handler(handler)
 
     def test_delete_handler(self):
         self.profiler.handlers = {}
@@ -157,7 +170,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
         self.profiler.before_root_func = dummy_func
         self.profiler.before_func = dummy_func
         self.profiler.set_curr_node(lambda: None)
-        x = self.profiler.before_func_profiling(lambda x: x, [], {})
+        x = self.profiler.before_func_profiling(lambda x: x, (), {})
         self.assertEqual(mock_func.call_count, 2)
         self.assertIsInstance(x, datetime)
 
@@ -174,7 +187,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
         self.profiler.set_curr_node(lambda: None)
         now = datetime.utcnow()
         with self.subTest("all measured"):
-            self.profiler.after_function_profiling(1, now, [], {})
+            self.profiler.after_function_profiling(1, now, (), {})
             self.assertEqual(mock_func.call_count, 2)
             mock_time.stop.assert_called_once_with(start=now, label_values={})
             mock_size.rec.assert_called_once_with(value=1, label_values={})
@@ -187,7 +200,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
         mock_time.reset_mock()
         mock_size.reset_mock()
         with self.subTest("not measured"):
-            self.profiler.after_function_profiling(1, now, [], {})
+            self.profiler.after_function_profiling(1, now, (), {})
             mock_func.assert_not_called()
             mock_time.stop.assert_not_called()
             mock_size.rec.assert_not_called()
