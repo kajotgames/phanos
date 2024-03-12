@@ -106,7 +106,7 @@ class AsyncTest:
     async def task_test(self):
         loop = asyncio.get_event_loop()
         # task with no await_test
-        await loop.create_task(self.async_access_long())
+        _ = loop.create_task(self.async_access_long())
         await asyncio.wait([asyncio.create_task(self.task_nested())])
 
     @profile
@@ -132,15 +132,15 @@ class AsyncTest:
     @profile
     async def wo_await(self):
         loop = asyncio.get_event_loop()
-        await loop.create_task(self.async_access_short())
+        _ = loop.create_task(self.async_access_short())
 
     @profile
     async def all_task_possibilities(self):
         loop = asyncio.get_event_loop()
         await asyncio.gather(self.async_access_short())
         await asyncio.wait([asyncio.create_task(self.async_access_short())])
-        await loop.create_task(self.async_access_short())
-        await asyncio.create_task(self.async_access_short())
+        _ = loop.create_task(self.async_access_short())
+        _ = asyncio.create_task(self.async_access_short())
         # loop.run_until_complete(self.async_access_short())
         asyncio.ensure_future(self.async_access_short())
         await asyncio.sleep(0.4)
