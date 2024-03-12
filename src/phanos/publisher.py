@@ -5,7 +5,8 @@ import inspect
 import logging
 import sys
 import threading
-import typing
+import typing as tp
+import warnings
 from abc import abstractmethod, ABC
 from datetime import datetime
 from functools import wraps
@@ -19,21 +20,11 @@ from .types import LoggerLike, Record
 
 TIME_PROFILER = "time_profiler"
 RESPONSE_SIZE = "response_size"
-ASYNC_HANDLERS = ("AsyncImpProfHandler",)
 
 # type of callable, which is called before execution of profiled method
-BeforeType = typing.Optional[
-    typing.Callable[
-        [
-            typing.Callable[[...], typing.Any],
-            typing.List[typing.Any],
-            typing.Dict[str, typing.Any],
-        ],
-        None,
-    ]
-]
+BeforeType = tp.Optional[tp.Callable[[tp.Callable[[...], tp.Any], tp.Tuple[tp.Any, ...], tp.Dict[str, tp.Any]], None]]
 # type of callable, which is called after execution of profiled method
-AfterType = typing.Optional[typing.Callable[[typing.Any, typing.List[typing.Any], typing.Dict[str, typing.Any]], None]]
+AfterType = tp.Optional[tp.Callable[[tp.Any, tp.List[tp.Any], tp.Dict[str, tp.Any]], None]]
 
 
 class AbstractExtProfiler(ABC):  # pragma: no cover
@@ -53,8 +44,8 @@ class AbstractExtProfiler(ABC):  # pragma: no cover
         raise NotImplementedError
 
     @abstractmethod
-    def async_inner(self, func, *args, **kwargs) -> typing.Any:
-        """Profiling behaviour for async functions
+    def async_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
+        """Profiling behaviour for async callables
 
         :param func: function to profile
         :param args: function arguments
@@ -63,8 +54,8 @@ class AbstractExtProfiler(ABC):  # pragma: no cover
         raise NotImplementedError
 
     @abstractmethod
-    def sync_inner(self, func, *args, **kwargs) -> typing.Any:
-        """Profiling behaviour for sync functions
+    def sync_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
+        """Profiling behaviour for sync callables
 
         :param func: function to profile
         :param args: function arguments
@@ -78,11 +69,13 @@ class Profiler(log.InstanceLoggerMixin):
 
     tree: ContextTree
 
-    metrics: typing.Dict[str, MetricWrapper]
-    time_profile: typing.Optional[TimeProfiler]
-    resp_size_profile: typing.Optional[ResponseSize]
+    # NOTE: possible refactor make class MetricStorage (__setitem__, __getitem__, __delitem__, ...)
+    metrics: tp.Dict[str, MetricWrapper]
+    time_profile: tp.Optional[TimeProfiler]
+    resp_size_profile: tp.Optional[ResponseSize]
 
-    handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
+    # NOTE: possible refactor make class HandlerStorage (__setitem__, __getitem__, __delitem__, ...)
+    handlers: tp.Dict[str, tp.Union[SyncBaseHandler, AsyncBaseHandler]]
 
     job: str
     handle_records: bool
@@ -94,10 +87,10 @@ class Profiler(log.InstanceLoggerMixin):
     before_root_func: BeforeType
     after_root_func: AfterType
 
-    profile_ext: typing.Optional[typing.Union[AsyncExtProfiler, SyncExtProfiler]]
+    profile_ext: tp.Optional[tp.Union[AsyncExtProfiler, SyncExtProfiler]]
 
-    RECORDS_ERR_LIMIT = 3000
-    RECORDS_LEN_LIMIT = 100
+    RECORDS_ERR_LIMIT = 3000  # if records count exceed this limit, something is wrong; log error and clear records
+    RECORDS_LEN_LIMIT = 100  # handle records after this limit or in root node
 
     def __init__(self) -> None:
         """Initialize Profiler
@@ -122,10 +115,13 @@ class Profiler(log.InstanceLoggerMixin):
 
         super().__init__(logged_name="phanos")
 
-    def dict_config(self, settings: dict[str, typing.Any]) -> None:
+    def dict_config(self, settings: dict[str, tp.Any]) -> None:
         """
-        Configure profiler instance with dictionary config.
+        Configure profiler instance with dictionary config for use with sync handlers.
         Set up profiling from config file, instead of changing code for various environments.
+
+        NOTE: can be used in async environment
+        NOTE: use only if you are not planning to use any async handler, use `async_config` otherwise
 
         Example:
             ```
@@ -145,11 +141,16 @@ class Profiler(log.InstanceLoggerMixin):
                 }
             }
             ```
+
+        Version 0.3.0:
+            `request_size_profile` key DEPRECATED, use `response_size_profile` kwarg instead
+
         :param settings: dictionary of desired profiling set up
         """
         from . import config as phanos_config
 
         self._dict_cfg_sync(settings)
+        self.profile_ext = SyncExtProfiler(self)
         if "handlers" in settings:
             try:
                 named_handlers = phanos_config.create_handlers(settings["handlers"])
@@ -158,20 +159,54 @@ class Profiler(log.InstanceLoggerMixin):
                 raise
             for handler in named_handlers.values():
                 self.add_handler(handler)
-        self.profile_ext = SyncExtProfiler(self)
 
-    async def async_dict_config(self, settings: dict[str, typing.Any]) -> None:
+    async def async_dict_config(self, settings: dict[str, tp.Any]) -> None:
+        """
+        Configure profiler instance with dictionary config for use with async handlers.
+        Set up profiling from config file, instead of changing code for various environments.
+
+        NOTE: cannot be used in purely sync environment
+        NOTE: allows to use sync handlers as well
+
+        Example:
+            ```
+            {
+                "job": "my_app",
+                "logger": "my_app_debug_logger",
+                "time_profile": True,
+                "request_size_profile": False,
+                "handle_records": True,
+                "error_raised_label": True,
+                "handlers": {
+                    "stdout_handler": {
+                        "class": "phanos.publisher.StreamHandler",
+                        "handler_name": "stdout_handler",
+                        "output": "ext://sys.stdout",
+                    }
+                }
+            }
+            ```
+
+        Version 0.3.0:
+            `request_size_profile` key DEPRECATED, use `response_size_profile` kwarg instead
+
+        :param settings: dictionary of desired profiling set up
+        """
         from . import config as phanos_config
 
         self._dict_cfg_sync(settings)
+        self.profile_ext = AsyncExtProfiler(self)
         if "handlers" in settings:
-            named_handlers: typing.Dict[str, typing.Union[SyncBaseHandler, AsyncBaseHandler]]
+            named_handlers: tp.Dict[str, tp.Union[SyncBaseHandler, AsyncBaseHandler]]
             named_handlers = await phanos_config.create_async_handlers(settings["handlers"])
             for handler in named_handlers.values():
                 self.add_handler(handler)
-        self.profile_ext = AsyncExtProfiler(self)
 
-    def _dict_cfg_sync(self, settings: dict[str, typing.Any]) -> None:
+    def _dict_cfg_sync(self, settings: dict[str, tp.Any]) -> None:
+        """common part for `dict_config` and `async_dict_config` methods
+
+        :param settings: dictionary of desired profiling set up
+        """
         if "logger" in settings:
             self.logger = logging.getLogger(settings["logger"])
         if "job" not in settings:
@@ -182,6 +217,8 @@ class Profiler(log.InstanceLoggerMixin):
             self.create_time_profiler()
         # request_size_profile deprecated
         if settings.get("request_size_profile") or settings.get("response_size_profile"):
+            if settings.get("request_size_profile"):
+                warnings.warn("request_size_profile is deprecated, use response_size_profile", DeprecationWarning)
             self.create_response_size_profiler()
         self.error_raised_label = settings.get("error_raised_label", True)
         self.handle_records = settings.get("handle_records", True)
@@ -193,19 +230,24 @@ class Profiler(log.InstanceLoggerMixin):
         job: str = "",
         time_profile: bool = True,
         request_size_profile: bool = False,
+        response_size_profile: bool = False,
         handle_records: bool = True,
         error_raised_label: bool = True,
         **kwargs,
     ) -> None:
-        """configure profiler instance
+        """common part for `config` and `async_config` methods
+
         :param error_raised_label: if record should have label signalizing error occurrence
         :param time_profile: if time profiling should be enabled
         :param job: name of job
         :param logger: logger instance
-        :param request_size_profile: should create instance of response size profiler
+        :param request_size_profile: [DEPRECATED](use response_size_profile)
+         should create instance of response size profiler
+        :param response_size_profile: should create instance of response size profiler
         :param handle_records: should handle recorded records
         :param ** kwargs: additional parameters
         """
+        _ = kwargs
         self.logger = logger or logging.getLogger(__name__)
         self.job = job
 
@@ -214,7 +256,9 @@ class Profiler(log.InstanceLoggerMixin):
 
         self.tree = ContextTree(self.logger)
         # request_size_profile deprecated
-        if request_size_profile or kwargs.pop("response_size_profile", False):
+        if request_size_profile or response_size_profile:
+            if request_size_profile:
+                warnings.warn("request_size_profile is deprecated, use response_size_profile", DeprecationWarning)
             self.create_response_size_profiler()
         if time_profile:
             self.create_time_profiler()
@@ -225,11 +269,40 @@ class Profiler(log.InstanceLoggerMixin):
         job: str = "",
         time_profile: bool = True,
         request_size_profile: bool = False,
+        response_size_profile: bool = False,
         handle_records: bool = True,
         error_raised_label: bool = True,
         **kwargs,
     ) -> None:
-        self._config(logger, job, time_profile, request_size_profile, handle_records, error_raised_label, **kwargs)
+        """configure profiler instance for use with sync handlers
+
+        NOTE: can be used in async environment
+        NOTE: use only if you are not planning to use any async handler, use `async_config` otherwise
+
+        Version 0.3.0:
+            `request_size_profile` DEPRECATED, use `response_size_profile` kwarg instead
+
+        :param error_raised_label: if record should have label signalizing error occurrence
+        :param time_profile: if time profiling should be enabled
+        :param job: name of job
+        :param logger: logger instance
+        :param request_size_profile: [DEPRECATED](use response_size_profile)
+         should create instance of response size profiler
+        :param response_size_profile: should create instance of response size profiler
+        :param handle_records: should handle recorded records
+        :param ** kwargs: additional parameters (currently not used)
+
+        """
+        self._config(
+            logger,
+            job,
+            time_profile,
+            request_size_profile,
+            response_size_profile,
+            handle_records,
+            error_raised_label,
+            **kwargs,
+        )
         self.profile_ext = SyncExtProfiler(self)
         self.debug("Profiler configured successfully")
 
@@ -239,11 +312,39 @@ class Profiler(log.InstanceLoggerMixin):
         job: str = "",
         time_profile: bool = True,
         request_size_profile: bool = False,
+        response_size_profile: bool = False,
         handle_records: bool = True,
         error_raised_label: bool = True,
         **kwargs,
     ):
-        self._config(logger, job, time_profile, request_size_profile, handle_records, error_raised_label, **kwargs)
+        """Configure profiler instance for use with async handlers
+
+        NOTE: cannot be used in purely sync environment
+        NOTE: allows to use sync handlers as well
+
+        Version 0.3.0:
+            `request_size_profile` deprecated, use `response_size_profile` kwarg instead
+
+        :param error_raised_label: if record should have label signalizing error occurrence
+        :param time_profile: if time profiling should be enabled
+        :param job: name of job
+        :param logger: logger instance
+        :param request_size_profile: [DEPRECATED](use response_size_profile)
+         should create instance of response size profiler
+        :param response_size_profile: should create instance of response size profiler
+        :param handle_records: should handle recorded records
+        :param ** kwargs: additional parameters (currently not used)
+        """
+        self._config(
+            logger,
+            job,
+            time_profile,
+            request_size_profile,
+            response_size_profile,
+            handle_records,
+            error_raised_label,
+            **kwargs,
+        )
         self.profile_ext = AsyncExtProfiler(self)
         self.debug("Profiler configured successfully")
 
@@ -333,7 +434,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.debug(f"Metric {metric.name!r} added to phanos profiler")
 
     def get_records_count(self) -> int:
-        """Get count of records from all metrics.
+        self.records_ = """Get count of records from all metrics.
 
         :returns: count of records
         """
@@ -343,14 +444,25 @@ class Profiler(log.InstanceLoggerMixin):
 
         return count
 
-    def add_handler(self, handler: typing.Union[SyncBaseHandler, AsyncBaseHandler]) -> None:
+    def add_handler(self, handler: tp.Union[SyncBaseHandler, AsyncBaseHandler]) -> None:
         """Add handler to profiler. If handler.name == existing handler name, existing handler will be overwritten.
 
-        :param handler: handler instanceprofiler_name
+        Version 0.3.0:
+            If handler is asynchronous and profiler is synchronous, ValueError is raised
+            If profiler is not configured yet, RuntimeError is raised
+
+        :param handler: handler instance profiler_name
+        :raises RuntimeError: if profiler is not configured yet
+        :raises ValueError: if handler is asynchronous and profiler is synchronous
         """
+        if self.profile_ext is None:
+            raise RuntimeError("Profiler not configured yet")
+        if isinstance(handler, AsyncBaseHandler) and not isinstance(self.profile_ext, AsyncExtProfiler):
+            raise ValueError(f"Handler {handler.handler_name!r} is asynchronous, but profiler is synchronous")
         if self.handlers.get(handler.handler_name, None):
             self.warning(
-                f"{self.add_handler.__qualname__!r}:Handler {handler.handler_name!r} already exist. Overwriting with new handler"
+                f"{self.add_handler.__qualname__!r}:Handler {handler.handler_name!r} already exist. "
+                f"Overwriting with new handler"
             )
         self.handlers[handler.handler_name] = handler
         self.debug(f"Handler {handler.handler_name!r} added to phanos profiler")
@@ -373,8 +485,11 @@ class Profiler(log.InstanceLoggerMixin):
         self.handlers.clear()
         self.debug("all handlers deleted")
 
-    def set_curr_node(self, func: typing.Callable) -> MethodTreeNode:
-        """Set current node in MethodContext tree to new node with given function"""
+    def set_curr_node(self, func: tp.Callable) -> MethodTreeNode:
+        """Set ContextVar `curr_node` to new node with given function and add it to MethodContext tree
+
+        :param func: function to be added as node to MethodContext tree
+        """
         try:
             current_node = curr_node.get()
         except LookupError:
@@ -385,12 +500,16 @@ class Profiler(log.InstanceLoggerMixin):
         return current_node
 
     def delete_curr_node(self, current_node: MethodTreeNode) -> None:
+        """Set ContextVar `curr_node` to parent of current node and delete current node from MethodContext tree
+
+        :param current_node: node to be deleted
+        """
         curr_node.set(current_node.parent)
         found = self.tree.find_and_delete_node(current_node)
         if not found:  # this won't happen if nobody messes with tree
             self.warning(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
 
-    def measure_execution_start(self) -> typing.Optional[datetime]:
+    def measure_execution_start(self) -> tp.Optional[datetime]:
         """Measure execution start time and return it"""
         # phanos before each decorated function profiling
         start_ts = None
@@ -398,8 +517,15 @@ class Profiler(log.InstanceLoggerMixin):
             start_ts = datetime.now()
         return start_ts
 
-    def before_func_profiling(self, func: typing.Callable, args, kwargs) -> typing.Optional[datetime]:
-        """Method for handling before function profiling chores"""
+    def before_func_profiling(
+        self, func: tp.Callable, args: tp.Tuple[tp.Any, ...], kwargs: tp.Dict[str, tp.Any]
+    ) -> tp.Optional[datetime]:
+        """Method for handling before function profiling chores
+
+        :param func: function to be profiled
+        :param args: function arguments
+        :param kwargs: function keyword arguments
+        """
         if curr_node.get().parent == self.tree.root:
             if callable(self.before_root_func):
                 self.before_root_func(func, args, kwargs)
@@ -408,7 +534,20 @@ class Profiler(log.InstanceLoggerMixin):
             self.before_func(func, args, kwargs)
         return self.measure_execution_start()
 
-    def after_function_profiling(self, result: typing.Any, start_ts: datetime, args, kwargs) -> None:
+    def after_function_profiling(
+        self,
+        result: tp.Any,
+        start_ts: datetime,
+        args: tp.Tuple[tp.Any, ...],
+        kwargs: tp.Dict[str, tp.Any],
+    ) -> None:
+        """Method for handling after function profiling chores
+
+        :param result: result of profiled function
+        :param start_ts: start time of function execution
+        :param args: function arguments
+        :param kwargs: function keyword arguments
+        """
         if self.time_profile:
             self.time_profile.stop(start=start_ts, label_values={})
         if callable(self.after_func):
@@ -422,13 +561,17 @@ class Profiler(log.InstanceLoggerMixin):
                 # users custom metrics profiling after root function if method passed
                 self.after_root_func(result, args, kwargs)
 
-    def profile(self, func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
+    def profile(self, func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]:
+        """Decorator for profiling functions"""
+
         @wraps(func)
-        def sync_inner(*args, **kwargs) -> typing.Any:
+        def sync_inner(*args, **kwargs) -> tp.Any:
+            """sync profiling"""
             return self.profile_ext.sync_inner(func, *args, **kwargs)
 
         @wraps(func)
-        async def async_inner(*args, **kwargs) -> typing.Any:
+        async def async_inner(*args, **kwargs) -> tp.Any:
+            """async profiling"""
             return await self.profile_ext.async_inner(func, *args, **kwargs)
 
         if inspect.iscoroutinefunction(func):
@@ -460,8 +603,7 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         self.handle_records_clear()
         self.base_profiler.tree.clear()
 
-    def sync_inner(self, func, *args, **kwargs) -> typing.Any:
-        """sync profiling"""
+    def sync_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
         if not self.base_profiler.needs_profiling():
             return func(*args, **kwargs)
 
@@ -469,7 +611,7 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         current_node = self.base_profiler.set_curr_node(func)
         start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
-            result: typing.Any = func(*args, **kwargs)
+            result: tp.Any = func(*args, **kwargs)
         except Exception:
             raise
         finally:
@@ -483,8 +625,7 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
 
         return result
 
-    async def async_inner(self, func, *args, **kwargs) -> typing.Any:
-        """async profiling"""
+    async def async_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
         if not self.base_profiler.needs_profiling():
             return await func(*args, **kwargs)
 
@@ -492,7 +633,7 @@ class SyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         current_node = self.base_profiler.set_curr_node(func)
         start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
-            result: typing.Any = await func(*args, **kwargs)
+            result: tp.Any = await func(*args, **kwargs)
         except Exception:
             raise
         finally:
@@ -533,8 +674,7 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         await self.handle_records_clear()
         self.base_profiler.tree.clear()
 
-    def sync_inner(self, func, *args, **kwargs) -> typing.Any:
-        """sync profiling"""
+    def sync_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
         if not self.base_profiler.needs_profiling():
             return func(*args, **kwargs)
 
@@ -542,7 +682,7 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         current_node = self.base_profiler.set_curr_node(func)
         start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
-            result: typing.Any = func(*args, **kwargs)
+            result: tp.Any = func(*args, **kwargs)
         except Exception:
             raise
         finally:
@@ -555,8 +695,7 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
 
         return result
 
-    async def async_inner(self, func, *args, **kwargs) -> typing.Any:
-        """async profiling"""
+    async def async_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
         if not self.base_profiler.needs_profiling():
             return await func(*args, **kwargs)
 
@@ -564,7 +703,7 @@ class AsyncExtProfiler(log.InstanceLoggerMixin, AbstractExtProfiler):
         current_node = self.base_profiler.set_curr_node(func)
         start_ts = self.base_profiler.before_func_profiling(func, args, kwargs)
         try:
-            result: typing.Any = await func(*args, **kwargs)
+            result: tp.Any = await func(*args, **kwargs)
         except Exception:
             raise
         finally:
@@ -630,7 +769,7 @@ class AsyncBaseHandler(BaseHandler, ABC):  # pragma: no cover
     @abstractmethod
     async def handle(
         self,
-        records: typing.List[Record],
+        records: tp.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Handle records asynchronously
@@ -645,7 +784,7 @@ class SyncBaseHandler(BaseHandler, ABC):  # pragma: no cover
     @abstractmethod
     def handle(
         self,
-        records: typing.List[Record],
+        records: tp.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Handle records
@@ -656,9 +795,7 @@ class SyncBaseHandler(BaseHandler, ABC):  # pragma: no cover
         raise NotImplementedError
 
 
-def log_error_profiling(
-    name: str, formatter: OutputFormatter, logger: LoggerLike, records: typing.List[Record]
-) -> None:
+def log_error_profiling(name: str, formatter: OutputFormatter, logger: LoggerLike, records: tp.List[Record]) -> None:
     """Logs records only if some of profiled methods raised error and error_raised label is present in records
 
     :param name: name of profiler
@@ -687,22 +824,22 @@ class ImpProfHandler(SyncBaseHandler):
 
     publisher: BlockingPublisher
     formatter: OutputFormatter
-    logger: typing.Optional[LoggerLike]
+    logger: tp.Optional[LoggerLike]
 
     def __init__(
         self,
         handler_name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
-        user: typing.Optional[str] = None,
-        password: typing.Optional[str] = None,
+        user: tp.Optional[str] = None,
+        password: tp.Optional[str] = None,
         heartbeat: int = 47,
         timeout: float = 23,
         retry_delay: float = 0.137,
         retry: int = 3,
         exchange_name: str = "profiling",
         exchange_type: str = "fanout",
-        logger: typing.Optional[LoggerLike] = None,
+        logger: tp.Optional[tp.Union[LoggerLike, str]] = None,
         **kwargs,
     ) -> None:
         """Creates BlockingPublisher instance (connection not established yet),
@@ -730,8 +867,11 @@ class ImpProfHandler(SyncBaseHandler):
         :param logger: logger
         """
         super().__init__(handler_name)
+        if isinstance(logger, str):
+            self.logger = logging.getLogger(logger)
+        else:
+            self.logger = logger or logging.getLogger(__name__)
 
-        self.logger = logger or logging.getLogger(__name__)
         self.publisher = BlockingPublisher(
             host=host,
             port=port,
@@ -743,7 +883,7 @@ class ImpProfHandler(SyncBaseHandler):
             retry=retry,
             exchange_name=exchange_name,
             exchange_type=exchange_type,
-            logger=logger,
+            logger=self.logger,
             **kwargs,
         )
         try:
@@ -758,7 +898,7 @@ class ImpProfHandler(SyncBaseHandler):
 
     def handle(
         self,
-        records: typing.List[Record],
+        records: tp.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Sends list of records to rabitMq queue
@@ -776,30 +916,32 @@ class AsyncImpProfHandler(AsyncBaseHandler):
 
     publisher: AsyncioPublisher
     formatter: OutputFormatter
-    logger: typing.Optional[LoggerLike]
+    logger: LoggerLike
 
     def __init__(
         self,
         handler_name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
-        user: typing.Optional[str] = None,
-        password: typing.Optional[str] = None,
+        user: tp.Optional[str] = None,
+        password: tp.Optional[str] = None,
         heartbeat: int = 47,
         timeout: float = 23,
         retry_delay: float = 0.137,
         retry: int = 3,
         exchange_name: str = "profiling",
         exchange_type: str = "fanout",
-        logger: typing.Optional[LoggerLike] = None,
+        logger: tp.Optional[tp.Union[LoggerLike, str]] = None,
         **kwargs,
     ) -> None:
         """
         Note: use `await AsyncImpProfHandler.create()` to create instance
         """
         super().__init__(handler_name)
-
-        self.logger = logger or logging.getLogger(__name__)
+        if isinstance(logger, str):
+            self.logger = logging.getLogger(logger)
+        else:
+            self.logger = logger or logging.getLogger(__name__)
         self.publisher = AsyncioPublisher(
             host=host,
             port=port,
@@ -811,7 +953,7 @@ class AsyncImpProfHandler(AsyncBaseHandler):
             retry=retry,
             exchange_name=exchange_name,
             exchange_type=exchange_type,
-            logger=logger,
+            logger=self.logger,
             **kwargs,
         )
         self.formatter = OutputFormatter()
@@ -822,15 +964,15 @@ class AsyncImpProfHandler(AsyncBaseHandler):
         handler_name: str,
         host: str = "127.0.0.1",
         port: int = 5672,
-        user: typing.Optional[str] = None,
-        password: typing.Optional[str] = None,
+        user: tp.Optional[str] = None,
+        password: tp.Optional[str] = None,
         heartbeat: int = 47,
         timeout: float = 23,
         retry_delay: float = 0.137,
         retry: int = 3,
         exchange_name: str = "profiling",
         exchange_type: str = "fanout",
-        logger: typing.Optional[LoggerLike] = None,
+        logger: tp.Optional[LoggerLike] = None,
         **kwargs,
     ) -> AsyncImpProfHandler:
         """Creates AsyncioPublisher instance (connection not established yet),
@@ -889,7 +1031,7 @@ class AsyncImpProfHandler(AsyncBaseHandler):
 
     async def handle(
         self,
-        records: typing.List[Record],
+        records: tp.List[Record],
         profiler_name: str = "profiler",
     ) -> None:
         """Sends list of records to rabitMq queue
@@ -912,7 +1054,7 @@ class LoggerHandler(SyncBaseHandler):
     def __init__(
         self,
         handler_name: str,
-        logger: typing.Optional[LoggerLike] = None,
+        logger: tp.Optional[LoggerLike] = None,
         level: int = 10,
     ) -> None:
         """
@@ -933,7 +1075,7 @@ class LoggerHandler(SyncBaseHandler):
         self.level = level
         self.formatter = OutputFormatter()
 
-    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: tp.List[Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -971,7 +1113,7 @@ class NamedLoggerHandler(SyncBaseHandler):
         self.level = level
         self.formatter = OutputFormatter()
 
-    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: tp.List[Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler
@@ -988,11 +1130,11 @@ class StreamHandler(SyncBaseHandler):
     """Stream handler of Records."""
 
     formatter: OutputFormatter
-    output: typing.TextIO
+    output: tp.TextIO
 
     _lock: threading.Lock
 
-    def __init__(self, handler_name: str, output: typing.TextIO = sys.stdout) -> None:
+    def __init__(self, handler_name: str, output: tp.TextIO = sys.stdout) -> None:
         """
 
         :param handler_name: name of profiler
@@ -1003,7 +1145,7 @@ class StreamHandler(SyncBaseHandler):
         self.formatter = OutputFormatter()
         self._lock = threading.Lock()
 
-    def handle(self, records: typing.List[Record], profiler_name: str = "profiler") -> None:
+    def handle(self, records: tp.List[Record], profiler_name: str = "profiler") -> None:
         """logs list of records
 
         :param profiler_name: name of profiler

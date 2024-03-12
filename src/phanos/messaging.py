@@ -141,7 +141,7 @@ class BasePublisher(ABC):
 
 
 class BlockingPublisher(BasePublisher):
-    """Simple blocking AMQP consumer"""
+    """Simple blocking AMQP publisher"""
 
     connection: typing.Optional[BlockingConnection]
     channel: typing.Optional[BlockingChannel]
@@ -207,7 +207,7 @@ class BlockingPublisher(BasePublisher):
 
 
 class AsyncioPublisher(BasePublisher):
-    """Simple blocking AMQP consumer"""
+    """AMQP publisher with asyncio support"""
 
     __slots__ = BasePublisher.__slots__ + ("exchange",)
     connection: typing.Optional[AbstractRobustConnection]
