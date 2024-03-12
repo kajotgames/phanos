@@ -1023,11 +1023,11 @@ class AsyncImpProfHandler(AsyncBaseHandler):
         try:
             await self.publisher.connect()
         except NETWORK_ERRORS as err:
-            self.logger.error(f"ImpProfHandler cannot connect to RabbitMQ because of {err}")
+            self.logger.error(f"AsyncImpProfHandler cannot connect to RabbitMQ because of {err}")
             raise RuntimeError("Cannot connect to RabbitMQ") from err
 
         await self.publisher.close()
-        self.logger.info("ImpProfHandler created successfully")
+        self.logger.info("AsyncImpProfHandler created successfully")
 
     async def handle(
         self,

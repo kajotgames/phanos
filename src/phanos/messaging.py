@@ -235,7 +235,7 @@ class AsyncioPublisher(BasePublisher):
             blocked_connection_timeout=self.connection_parameters.blocked_connection_timeout,
         )
         self.channel = await self.connection.channel()
-        await self.channel.declare_exchange(
+        self.exchange = await self.channel.declare_exchange(
             name=self.exchange_name,
             type=self.exchange_type,
         )
