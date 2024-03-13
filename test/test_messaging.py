@@ -184,6 +184,9 @@ class TestAsyncPublisher(unittest.IsolatedAsyncioTestCase):
         mock_connect.assert_called_once()
         mock_connect.return_value.channel.assert_called_once()
         mock_connect.return_value.channel.return_value.declare_exchange.assert_called_once()
+        self.assertIsNotNone(publisher.connection)
+        self.assertIsNotNone(publisher.channel)
+        self.assertIsNotNone(publisher.exchange)
 
     @patch("phanos.messaging.AsyncioPublisher.close")
     @patch("phanos.messaging.AsyncioPublisher.connect")

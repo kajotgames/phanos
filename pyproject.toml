@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phanos"
-version = "0.2.3"
+version = "0.3.0"
 authors = [
   { name="Miroslav Bulička", email="bulickamiroslav@gmail.com" },
 ]
@@ -35,3 +35,4 @@ name = "phanos"
 [project.urls]
 "Homepage" = "https://github.com/kajotgames/phanos"
 "Bug Tracker" = "https://github.com/kajotgames/phanos/issues"
+"Changelog" = "https://github.com/kajotgames/phanos/blob/main/CHANGELOG.md"

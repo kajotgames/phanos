@@ -28,6 +28,11 @@ AfterType = tp.Optional[tp.Callable[[tp.Any, tp.List[tp.Any], tp.Dict[str, tp.An
 
 
 class AbstractExtProfiler(ABC):  # pragma: no cover
+    """Abstract class for ExtProfiler classes
+
+    the main purpose of these extensions is to provide logic for profiling and handling, that is different with
+    usage of asynchronous handlers, while main profiler will still remain to be just one class and thus one instance
+    """
     @abstractmethod
     def handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
