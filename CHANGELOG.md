@@ -6,6 +6,14 @@ this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+ - `ContextTree.delete_node` method now returns `bool` if node was deleted or not
+
+
+
 ## [0.3.0] - 2024-03-13
 
 ### Added

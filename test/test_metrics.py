@@ -19,69 +19,65 @@ from src.phanos.metrics import (
 
 class TestStoreOperationDecorator(unittest.TestCase):
     def setUp(self):
-        self.operation_mock = Mock()
+        self.operation_mock = Mock()  # operation storing value
         self.operation_mock.__qualname__ = "mocked_method"
+        self.metric_instance = MetricWrapper("test_metric", "TEST", "V", {"error_raised"})
+        self.operation_mock.side_effect = lambda i, v, l: self.metric_instance.values.append(
+            ("observe", v)
+        )  # mock operation stored
+        self.decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
+
+    def tearDown(self):
+        self.metric_instance = None
+        self.decorated_function = None
+        self.operation_mock.reset_mock()
+
+    def _assert_empty_metric(self):
+        self.assertEqual(len(self.metric_instance.values), 0)
+        self.assertEqual(len(self.metric_instance.label_values), 0)
+        self.assertEqual(len(self.metric_instance.method), 0)
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_successful_execution(self):
-        # Create an instance of MetricWrapper
-        metric_instance = MetricWrapper("test_metric", "TEST", "V", {"error_raised"})
-        metric_instance.values = [("observe", 1)]
-
         # Apply the decorator to a test function
-        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        decorated_function(metric_instance, value=42)
+        self.decorated_function(self.metric_instance, value=1)
 
         # Assert that the operation method was called with the correct arguments
-        self.operation_mock.assert_called_once_with(metric_instance, 42, {"error_raised": False})
+        self.operation_mock.assert_called_once_with(self.metric_instance, 1, {"error_raised": False})
 
         # Assert that the values, label_values, and method lists are updated
-        self.assertEqual(metric_instance.values, [("observe", 1)])
-        self.assertEqual(metric_instance.label_values, [{"error_raised": False}])
-        self.assertEqual(metric_instance.method, ["mocked_value"])
+        self.assertEqual(self.metric_instance.values, [("observe", 1)])
+        self.assertEqual(self.metric_instance.label_values, [{"error_raised": False}])
+        self.assertEqual(self.metric_instance.method, ["mocked_value"])
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_invalid_labels(self):
-        # Create an instance of MetricWrapper
-        metric_instance = MetricWrapper("test_metric", "TEST", "V", {"label1", "label2"})
-        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        decorated_function(metric_instance, value=42, label_values={"invalid_label": "value"})
-        self.assertEqual(len(metric_instance.label_values), 0)
-        self.assertEqual(len(metric_instance.values), 0)
-        self.assertEqual(len(metric_instance.method), 0)
+        self.decorated_function(self.metric_instance, value=1, label_values={"invalid_label": "value"})
+        self._assert_empty_metric()
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(side_effect=LookupError)))
     def test_ctx_not_found(self):
-        metric_instance = MetricWrapper("test_metric", "TEST", "V")
-        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        decorated_function(metric_instance, value=42)
-        self.assertEqual(len(metric_instance.label_values), 0)
-        self.assertEqual(len(metric_instance.method), 0)
-        self.assertEqual(len(metric_instance.values), 0)
+        self.decorated_function(self.metric_instance, value=1)
+        self._assert_empty_metric()
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_operation_raised(self):
-        metric_instance = MetricWrapper("test_metric", "TEST", "V")
         self.operation_mock.side_effect = InvalidValueError("Float")
-        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        decorated_function(metric_instance, value=42)
-        self.assertEqual(len(metric_instance.label_values), 0)
-        self.assertEqual(len(metric_instance.method), 0)
-        self.assertEqual(len(metric_instance.values), 0)
+        self.decorated_function(self.metric_instance, value=1)
+        self._assert_empty_metric()
 
     @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_operation_not_stored(self):
-        metric_instance = MetricWrapper("test_metric", "TEST", "V")
-        decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
-        decorated_function(metric_instance, value=42)
-
-        # assert that last `label_value` and `method` was cleared
-        self.assertEqual(len(metric_instance.label_values), 0)
-        self.assertEqual(len(metric_instance.method), 0)
-        self.assertEqual(len(metric_instance.values), 0)
+        self.operation_mock.side_effect = None  # mock no action stored
+        self.decorated_function(self.metric_instance, value=1)
+        self._assert_empty_metric()
 
 
 class TestMetrics(unittest.TestCase):
+    METRIC_NAME = "test_metric"
+    METRIC_JOB = "TEST"
+    METRIC_UNITS = "V"
+
     def setUp(self):
         self.tmp = StoreOperationDecorator.wrapper
         # monkey patch StoreOperationDecorator.wrapper to just call desired operation
@@ -92,7 +88,9 @@ class TestMetrics(unittest.TestCase):
         StoreOperationDecorator.wrapper = self.tmp
 
     def test_metric_wrapper(self):
-        metric = MetricWrapper("test_metric", "TEST", "V", {"test", "test2"})
+        metric = MetricWrapper(
+            TestMetrics.METRIC_NAME, TestMetrics.METRIC_JOB, TestMetrics.METRIC_UNITS, {"test", "test2"}
+        )
 
         metric.method = ["X:y", "X:z"]
         metric.values = [("observe", 1), ("observe", 2)]

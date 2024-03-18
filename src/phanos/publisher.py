@@ -33,6 +33,7 @@ class AbstractExtProfiler(ABC):  # pragma: no cover
     the main purpose of these extensions is to provide logic for profiling and handling, that is different with
     usage of asynchronous handlers, while main profiler will still remain to be just one class and thus one instance
     """
+
     @abstractmethod
     def handle_records_clear(self) -> None:
         """Pass stored records to each registered Handler and delete stored records.
@@ -50,11 +51,13 @@ class AbstractExtProfiler(ABC):  # pragma: no cover
 
     @abstractmethod
     def async_inner(self, func: tp.Callable[..., tp.Any], *args, **kwargs) -> tp.Any:
-        """Profiling behaviour for async callables
+        """
+        Profiling behaviour for async callables
 
-        :param func: function to profile
-        :param args: function arguments
-        :param kwargs: function keyword arguments
+
+            :param func: function to profile
+            :param args: function arguments
+            :param kwargs: function keyword arguments
         """
         raise NotImplementedError
 
@@ -117,6 +120,8 @@ class Profiler(log.InstanceLoggerMixin):
         self.after_func = None
         self.before_root_func = None
         self.after_root_func = None
+
+        self.profile_ext = None
 
         super().__init__(logged_name="phanos")
 

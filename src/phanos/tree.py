@@ -28,25 +28,19 @@ class Context:
     will not be added to `Context.value`.
     """
 
-    # top module of root_method
-    top_module: typing.Optional[str]
     # method for which to keep context
     method: typing.Optional[typing.Callable]
-
     value: str
 
     def __init__(self, method: typing.Optional[typing.Callable] = None) -> None:
-        """Stores method and set initial context value and top_module
+        """Stores method and set initial context value
 
         :param method: Any Callable, must be passed. self.method=None is reserved for root node
         """
         self.method = method
         if method:
-            module = inspect.getmodule(self.method)
             self.value = method.__name__
-            self.top_module = __import__(module.__name__.split(".")[0]).__name__ if module else ""
             return
-        self.top_module = None
         self.value = ""
 
     def __str__(self) -> str:
@@ -102,12 +96,16 @@ class ContextTree(log.InstanceLoggerMixin):
         super().__init__(logged_name="phanos", logger=logger or logging.getLogger(__name__))
         self.root = MethodTreeNode(logger=self.logger)
 
-    def delete_node(self, node: MethodTreeNode) -> None:
+    def delete_node(self, node: MethodTreeNode) -> bool:
         """Clears all references for specified node in tree and delete it,
         modify tree, so that all children of deleted node are moved to parent of deleted node
 
         :param node: node which should be deleted
         """
+        if node is self.root:
+            self.warning(f"{self.find_and_delete_node.__qualname__}: cannot delete root node")
+            return False
+
         if node.parent is not None:
             node.parent.children.remove(node)
             node.parent.children.extend(node.children)
@@ -117,6 +115,7 @@ class ContextTree(log.InstanceLoggerMixin):
         node.parent = None
         self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
         del node
+        return True
 
     def _find_and_delete_node(self, node: MethodTreeNode, root: MethodTreeNode) -> bool:
         """Searches for node in subtree starting from `root` and deletes it
@@ -125,8 +124,8 @@ class ContextTree(log.InstanceLoggerMixin):
         :param root: root of subtree
         """
         if root is node:
-            self.delete_node(node)
-            return True
+            deleted = self.delete_node(node)
+            return deleted
 
         for child in root.children:
             return self._find_and_delete_node(node, child)
@@ -141,9 +140,6 @@ class ContextTree(log.InstanceLoggerMixin):
         :param root: root of ContextTree.
         :returns: True if node was found and deleted, False otherwise
         """
-        if node is self.root:
-            self.warning(f"{self.find_and_delete_node.__qualname__}: cannot delete root node")
-            return False
         if root is None:
             root = self.root
 
