@@ -111,7 +111,7 @@ class ContextTree(log.InstanceLoggerMixin):
             node.parent.children.extend(node.children)
         for child_to_move in node.children:
             child_to_move.parent = node.parent
-        node.children = []
+        node.children.clear()
         node.parent = None
         self.debug(f"{self.delete_node.__qualname__}: node {node.ctx!r} deleted")
         del node

@@ -10,3 +10,4 @@ build>=0.10
 mypy
 pylint
 snakeviz
+pyperf

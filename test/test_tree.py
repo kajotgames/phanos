@@ -121,9 +121,8 @@ class TestContextTree(unittest.TestCase):
             ctx_tree.delete_node(child1)
             self.assertEqual(node.children, [child2])
             self.assertIsNone(child1.parent)
-
             self.assertEqual(child1.children, [])
-            self.assertEqual(weakref.getweakrefcount(node), 0)  # check if weakref is deleted
+            self.assertEqual(weakref.getweakrefcount(child1), 0)  # check if weakref is deleted
 
         ctx_tree, node, child1, child2 = construct_tree()
         with self.subTest("middle node"):
@@ -131,7 +130,6 @@ class TestContextTree(unittest.TestCase):
             self.assertEqual(ctx_tree.root.children, [child1, child2])
             self.assertEqual(child1.parent, ctx_tree.root)
             self.assertEqual(child2.parent, ctx_tree.root)
-
             self.assertIsNone(node.parent)
             self.assertEqual(node.children, [])
             self.assertEqual(weakref.getweakrefcount(node), 0)  # check if weakref is deleted
