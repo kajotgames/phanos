@@ -6,12 +6,22 @@ this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.3.2] - 2024-03-21
 
 ### Changed
 
- - `ContextTree.delete_node` method now returns `bool` if node was deleted or not
+ - `curr_node` is now part of `Profiler` instance instead of being global variable
+ - `Profiler.tree` is now initialized in `Profiler.__init__` instead of in configuration methods
 
+### Fixed
+
+ - `curr_node` ContextVar and `Profiler.tree` are now properly initialized in `Profiler` instance
+
+## [0.3.1] - 2024-03-21
+
+### Changed
+ - removed deprecation warning for phanos_profiler variable    
+ - `ContextTree.delete_node` method now returns `bool` if node was deleted or not
 
 
 ## [0.3.0] - 2024-03-13
