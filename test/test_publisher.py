@@ -4,7 +4,6 @@ from typing import Optional
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from phanos.publisher import Profiler, TIME_PROFILER, RESPONSE_SIZE, AsyncImpProfHandler
-from phanos.tree import curr_node
 
 
 class TestProfiler(unittest.IsolatedAsyncioTestCase):
@@ -79,7 +78,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
     def test_clear(self, mock_cleanup: MagicMock):
         self.profiler.clear()
         self.assertEqual(mock_cleanup.call_count, 2)
-        self.assertEqual(curr_node.get(), self.profiler.tree.root)
+        self.assertEqual(self.profiler.curr_node.get(), self.profiler.tree.root)
 
     def test_add_metric(self):
         self.profiler.metrics = {}
@@ -144,7 +143,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
 
     def test_set_curr_node(self):
         node = self.profiler.set_curr_node(lambda: None)
-        self.assertEqual(node, curr_node.get())
+        self.assertEqual(node, self.profiler.curr_node.get())
         self.assertEqual(node.parent, self.profiler.tree.root)
         node2 = self.profiler.set_curr_node(lambda: None)
         self.assertEqual(node, node2.parent)
@@ -152,7 +151,7 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
     def test_delete_curr_node(self):
         node = self.profiler.set_curr_node(lambda: None)
         self.profiler.delete_curr_node(node)
-        self.assertEqual(curr_node.get(), self.profiler.tree.root)
+        self.assertEqual(self.profiler.curr_node.get(), self.profiler.tree.root)
 
         self.profiler.delete_curr_node(node)
 
@@ -189,8 +188,10 @@ class TestProfiler(unittest.IsolatedAsyncioTestCase):
         with self.subTest("all measured"):
             self.profiler.after_function_profiling(1, now, (), {})
             self.assertEqual(mock_func.call_count, 2)
-            mock_time.stop.assert_called_once_with(start=now, label_values={})
-            mock_size.rec.assert_called_once_with(value=1, label_values={})
+            mock_time.stop.assert_called_once_with(
+                start=now, current_node=self.profiler.curr_node.get(), label_values={}
+            )
+            mock_size.rec.assert_called_once_with(value=1, current_node=self.profiler.curr_node.get(), label_values={})
 
         self.profiler.after_func = None
         self.profiler.after_root_func = None

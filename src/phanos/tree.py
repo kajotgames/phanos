@@ -1,9 +1,6 @@
 """ Module containing Classes for context tree management """
 from __future__ import annotations
 
-# contextvars package is builtin but PyCharm do not recognize it
-# noinspection PyPackageRequirements
-import contextvars
 import inspect
 import logging
 import typing
@@ -12,9 +9,6 @@ import weakref
 
 from . import log
 from .types import LoggerLike
-
-# context var storing currently processed node. Is not part of MethodTree because of async
-curr_node: contextvars.ContextVar = contextvars.ContextVar("curr_node")
 
 
 class Context:

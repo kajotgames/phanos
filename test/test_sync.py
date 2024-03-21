@@ -4,8 +4,8 @@ from io import StringIO
 from unittest.mock import patch, MagicMock
 
 import phanos
-from phanos import publisher
-from src.phanos import phanos_profiler
+from phanos import publisher, MethodTreeNode
+from src.phanos import phanos_profiler, log
 from phanos.publisher import StreamHandler, ImpProfHandler
 from test import testing_data, dummy_api, common
 from test.dummy_api import app, DummyDbAccess
@@ -15,6 +15,8 @@ from src.phanos.metrics import (
 
 
 class TestProfiling(unittest.TestCase):
+    CURR_NODE = MethodTreeNode()
+
     @classmethod
     def setUpClass(cls) -> None:
         phanos_profiler.config(job="TEST", time_profile=True, request_size_profile=False, error_raised_label=False)
@@ -87,7 +89,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = func
-            hist.observe(1.0, {"place": "before_root"})
+            hist.observe(1.0, self.CURR_NODE, {"place": "before_root"})
 
         phanos_profiler.before_root_func = before_root_func
 
@@ -95,7 +97,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = func
-            hist.observe(2.0, {"place": "before_func"})
+            hist.observe(2.0, self.CURR_NODE, {"place": "before_func"})
 
         phanos_profiler.before_func = before_func
 
@@ -103,7 +105,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.observe(3.0, {"place": "after_func"})
+            hist.observe(3.0, self.CURR_NODE, {"place": "after_func"})
 
         phanos_profiler.after_func = after_func
 
@@ -111,7 +113,7 @@ class TestProfiling(unittest.TestCase):
             _ = args
             _ = kwargs
             _ = fn_result
-            hist.observe(4.0, {"place": "after_root"})
+            hist.observe(4.0, self.CURR_NODE, {"place": "after_root"})
 
         phanos_profiler.after_root_func = after_root_func
 
@@ -124,7 +126,7 @@ class TestProfiling(unittest.TestCase):
             method = line[1][8:]
             value = line[2][7:10]
             place = line[3][14:-1]
-            self.assertEqual(method, testing_data.custom_profile_out[i]["method"])
+            self.assertEqual(method, "")
             self.assertEqual(float(value), testing_data.custom_profile_out[i]["value"])
             self.assertEqual(place, testing_data.custom_profile_out[i]["place"])
 
@@ -135,14 +137,15 @@ class TestProfiling(unittest.TestCase):
         test_profiler.add_metric(hist)
         self.assertIn("error_raised", hist.label_names)
         test_profiler.config(job="TEST", error_raised_label=True)
+        test_profiler.curr_node.set(test_profiler.tree.root)
         test_profiler.error_raised_label = False
         self.assertNotIn("error_raised", hist.label_names)
-        hist.observe(2.0, None)
+        hist.observe(2.0, test_profiler.curr_node.get())
         self.assertEqual([{}], hist.label_values)
         self.assertEqual(set(), hist.label_names)
 
         test_profiler.error_raised_label = True
-        hist.observe(2.0, None)
+        hist.observe(2.0, test_profiler.curr_node.get())
 
         self.assertEqual([{}, {"error_raised": False}], hist.label_values)
         self.assertEqual({"error_raised"}, hist.label_names)

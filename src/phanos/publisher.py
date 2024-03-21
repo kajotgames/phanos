@@ -10,10 +10,13 @@ import warnings
 from abc import abstractmethod, ABC
 from datetime import datetime
 from functools import wraps
+# contextvars package is builtin but PyCharm do not recognize it
+# noinspection PyPackageRequirements
+from contextvars import ContextVar
 
 from . import log
 from .messaging import AsyncioPublisher, NETWORK_ERRORS, BlockingPublisher
-from .tree import ContextTree, curr_node
+from .tree import ContextTree
 from .metrics import MetricWrapper, TimeProfiler, ResponseSize
 from .tree import MethodTreeNode
 from .types import LoggerLike, Record
@@ -76,6 +79,7 @@ class Profiler(log.InstanceLoggerMixin):
     """Base class for Profiler"""
 
     tree: ContextTree
+    curr_node: ContextVar[MethodTreeNode]
 
     # NOTE: possible refactor make class MetricStorage (__setitem__, __getitem__, __delitem__, ...)
     metrics: tp.Dict[str, MetricWrapper]
@@ -122,6 +126,9 @@ class Profiler(log.InstanceLoggerMixin):
         self.after_root_func = None
 
         self.profile_ext = None
+
+        self.tree = ContextTree()
+        self.curr_node = ContextVar("curr_node")
 
         super().__init__(logged_name="phanos")
 
@@ -232,7 +239,7 @@ class Profiler(log.InstanceLoggerMixin):
             self.create_response_size_profiler()
         self.error_raised_label = settings.get("error_raised_label", True)
         self.handle_records = settings.get("handle_records", True)
-        self.tree = ContextTree(self.logger)
+        self.tree.logger = self.logger
 
     def _config(
         self,
@@ -264,7 +271,7 @@ class Profiler(log.InstanceLoggerMixin):
         self.handle_records = handle_records
         self.error_raised_label = error_raised_label
 
-        self.tree = ContextTree(self.logger)
+        self.tree.logger = self.logger
         # request_size_profile deprecated
         if request_size_profile or response_size_profile:
             if request_size_profile:
@@ -426,7 +433,7 @@ class Profiler(log.InstanceLoggerMixin):
             metric.cleanup()
 
         self.tree.clear()
-        curr_node.set(self.tree.root)
+        self.curr_node.set(self.tree.root)
 
     def add_metric(self, metric: MetricWrapper) -> None:
         """Adds new metric to profiling. If metric.name == existing metric name, existing metric will be overwritten.
@@ -501,12 +508,12 @@ class Profiler(log.InstanceLoggerMixin):
         :param func: function to be added as node to MethodContext tree
         """
         try:
-            current_node = curr_node.get()
+            current_node = self.curr_node.get()
         except LookupError:
-            curr_node.set(self.tree.root)
+            self.curr_node.set(self.tree.root)
             current_node = self.tree.root
         current_node = current_node.add_child(MethodTreeNode(func, self.logger))
-        curr_node.set(current_node)
+        self.curr_node.set(current_node)
         return current_node
 
     def delete_curr_node(self, current_node: MethodTreeNode) -> None:
@@ -514,7 +521,7 @@ class Profiler(log.InstanceLoggerMixin):
 
         :param current_node: node to be deleted
         """
-        curr_node.set(current_node.parent)
+        self.curr_node.set(current_node.parent)
         found = self.tree.find_and_delete_node(current_node)
         if not found:  # this won't happen if nobody messes with tree
             self.warning(f"{self.tree.find_and_delete_node.__qualname__}: node {current_node.ctx!r} was not found")
@@ -536,7 +543,7 @@ class Profiler(log.InstanceLoggerMixin):
         :param args: function arguments
         :param kwargs: function keyword arguments
         """
-        if curr_node.get().parent == self.tree.root:
+        if self.curr_node.get().parent == self.tree.root:
             if callable(self.before_root_func):
                 self.before_root_func(func, args, kwargs)
             # place for phanos before root profiling, if it will be needed
@@ -559,14 +566,14 @@ class Profiler(log.InstanceLoggerMixin):
         :param kwargs: function keyword arguments
         """
         if self.time_profile:
-            self.time_profile.stop(start=start_ts, label_values={})
+            self.time_profile.stop(start=start_ts, current_node=self.curr_node.get(), label_values={})
         if callable(self.after_func):
             # users custom metrics profiling after every decorated function if method passed
             self.after_func(result, args, kwargs)
-        if curr_node.get().parent is self.tree.root:
+        if self.curr_node.get().parent is self.tree.root:
             # phanos after root function profiling
             if self.resp_size_profile:
-                self.resp_size_profile.rec(value=result, label_values={})
+                self.resp_size_profile.rec(value=result, current_node=self.curr_node.get(), label_values={})
             if callable(self.after_root_func):
                 # users custom metrics profiling after root function if method passed
                 self.after_root_func(result, args, kwargs)

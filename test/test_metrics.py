@@ -2,6 +2,7 @@ import datetime
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
+from phanos import MethodTreeNode
 from src.phanos.metrics import (
     Histogram,
     Summary,
@@ -18,11 +19,13 @@ from src.phanos.metrics import (
 
 
 class TestStoreOperationDecorator(unittest.TestCase):
+    CURRENT_NODE = MethodTreeNode()
+
     def setUp(self):
         self.operation_mock = Mock()  # operation storing value
         self.operation_mock.__qualname__ = "mocked_method"
         self.metric_instance = MetricWrapper("test_metric", "TEST", "V", {"error_raised"})
-        self.operation_mock.side_effect = lambda i, v, l: self.metric_instance.values.append(
+        self.operation_mock.side_effect = lambda i, v, cn, l: self.metric_instance.values.append(
             ("observe", v)
         )  # mock operation stored
         self.decorated_function = StoreOperationDecorator(self.operation_mock).wrapper
@@ -37,39 +40,32 @@ class TestStoreOperationDecorator(unittest.TestCase):
         self.assertEqual(len(self.metric_instance.label_values), 0)
         self.assertEqual(len(self.metric_instance.method), 0)
 
-    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_successful_execution(self):
         # Apply the decorator to a test function
-        self.decorated_function(self.metric_instance, value=1)
+        self.decorated_function(self.metric_instance, value=1, current_node=self.CURRENT_NODE)
 
         # Assert that the operation method was called with the correct arguments
-        self.operation_mock.assert_called_once_with(self.metric_instance, 1, {"error_raised": False})
+        self.operation_mock.assert_called_once_with(self.metric_instance, 1, self.CURRENT_NODE, {"error_raised": False})
 
         # Assert that the values, label_values, and method lists are updated
         self.assertEqual(self.metric_instance.values, [("observe", 1)])
         self.assertEqual(self.metric_instance.label_values, [{"error_raised": False}])
-        self.assertEqual(self.metric_instance.method, ["mocked_value"])
+        self.assertEqual(self.metric_instance.method, [""])
 
-    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_invalid_labels(self):
-        self.decorated_function(self.metric_instance, value=1, label_values={"invalid_label": "value"})
+        self.decorated_function(
+            self.metric_instance, value=1, current_node=self.CURRENT_NODE, label_values={"invalid_label": "value"}
+        )
         self._assert_empty_metric()
 
-    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(side_effect=LookupError)))
-    def test_ctx_not_found(self):
-        self.decorated_function(self.metric_instance, value=1)
-        self._assert_empty_metric()
-
-    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_operation_raised(self):
         self.operation_mock.side_effect = InvalidValueError("Float")
-        self.decorated_function(self.metric_instance, value=1)
+        self.decorated_function(self.metric_instance, value=1, current_node=self.CURRENT_NODE)
         self._assert_empty_metric()
 
-    @patch("src.phanos.metrics.curr_node", Mock(get=Mock(return_value=Mock(ctx=Mock(value="mocked_value")))))
     def test_operation_not_stored(self):
         self.operation_mock.side_effect = None  # mock no action stored
-        self.decorated_function(self.metric_instance, value=1)
+        self.decorated_function(self.metric_instance, value=1, current_node=self.CURRENT_NODE)
         self._assert_empty_metric()
 
 
@@ -77,6 +73,7 @@ class TestMetrics(unittest.TestCase):
     METRIC_NAME = "test_metric"
     METRIC_JOB = "TEST"
     METRIC_UNITS = "V"
+    CURRENT_NODE = MethodTreeNode()
 
     def setUp(self):
         self.tmp = StoreOperationDecorator.wrapper
@@ -127,8 +124,8 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(hist.metric, "histogram")
         with self.assertRaises(InvalidValueError):
-            hist.observe("asd", None)
-        hist.observe(2.0, None)
+            hist.observe("asd", self.CURRENT_NODE, None)
+        hist.observe(2.0, self.CURRENT_NODE, None)
         self.assertEqual(hist.values, [("observe", 2.0)])
 
     def test_summary(self):
@@ -139,8 +136,8 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(sum_.metric, "summary")
         with self.assertRaises(InvalidValueError):
-            sum_.observe("asd", None)
-        sum_.observe(2.0, None)
+            sum_.observe("asd", self.CURRENT_NODE, None)
+        sum_.observe(2.0, self.CURRENT_NODE, None)
         self.assertEqual(sum_.values, [("observe", 2.0)])
 
     def test_counter(self):
@@ -151,8 +148,8 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(cnt.metric, "counter")
         with self.assertRaises(InvalidValueError):
-            cnt.inc("asd", None)
-        cnt.inc(2.0, None)
+            cnt.inc("asd", self.CURRENT_NODE, None)
+        cnt.inc(2.0, self.CURRENT_NODE, None)
         self.assertEqual(cnt.values, [("inc", 2.0)])
 
     def test_info(self):
@@ -163,8 +160,8 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(inf.metric, "info")
         self.assertEqual(inf.units, "info")
         with self.assertRaises(InvalidValueError):
-            inf.info_("asd", None)
-        inf.info_({"x": "y"}, None)
+            inf.info_("asd", self.CURRENT_NODE, None)
+        inf.info_({"x": "y"}, self.CURRENT_NODE, None)
         self.assertEqual(inf.values, [("info", {"x": "y"})])
 
     def test_gauge(self):
@@ -175,24 +172,24 @@ class TestMetrics(unittest.TestCase):
         )
         self.assertEqual(g.metric, "gauge")
         with self.assertRaises(InvalidValueError):
-            g.inc("asd", None)
+            g.inc("asd", self.CURRENT_NODE, None)
         with self.assertRaises(InvalidValueError):
-            g.inc(-1.2, None)
-        g.inc(2.0, None)
+            g.inc(-1.2, self.CURRENT_NODE, None)
+        g.inc(2.0, self.CURRENT_NODE, None)
         self.assertEqual(g.values, [("inc", 2.0)])
         g.values = []
 
         with self.assertRaises(InvalidValueError):
-            g.dec("asd", None)
+            g.dec("asd", self.CURRENT_NODE, None)
         with self.assertRaises(InvalidValueError):
-            g.dec(-1.2, None)
-        g.dec(2.0, None)
+            g.dec(-1.2, self.CURRENT_NODE, None)
+        g.dec(2.0, self.CURRENT_NODE, None)
         self.assertEqual(g.values, [("dec", 2.0)])
         g.values.clear()
 
         with self.assertRaises(InvalidValueError):
-            g.set("set", None)
-        g.set(2.0, None)
+            g.set("set", self.CURRENT_NODE, None)
+        g.set(2.0, self.CURRENT_NODE, None)
         self.assertEqual(g.values, [("set", 2.0)])
         g.values.clear()
 
@@ -205,18 +202,18 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(enum.metric, "enum")
         self.assertEqual(enum.units, "enum")
         with self.assertRaises(InvalidValueError):
-            enum.state("asd", None)
-        enum.state("x", None)
+            enum.state("asd", self.CURRENT_NODE, None)
+        enum.state("x", self.CURRENT_NODE, None)
         self.assertEqual(enum.values, [("state", "x")])
 
     @patch("src.phanos.metrics.Histogram.observe")
     def test_time_profiler(self, mock_observe: MagicMock):
         time = TimeProfiler("test", "TEST")
-        time.stop(datetime.datetime.now(), {})
+        time.stop(datetime.datetime.now(), self.CURRENT_NODE, {})
         self.assertEqual(mock_observe.call_count, 1)
 
     @patch("src.phanos.metrics.Histogram.observe")
     def test_response_size(self, mock_observe: MagicMock):
         time = ResponseSize("test", "TEST")
-        time.rec("asd", {})
+        time.rec("asd", self.CURRENT_NODE, {})
         self.assertEqual(mock_observe.call_count, 1)

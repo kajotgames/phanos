@@ -8,7 +8,7 @@ import typing
 from datetime import datetime as dt
 
 from . import log
-from .tree import curr_node
+from .tree import MethodTreeNode
 from .types import Record, LoggerLike
 
 
@@ -109,7 +109,10 @@ ValueTypes = typing.Union[
     dict[str, typing.Any],
     tuple[str, typing.Union[float, str, dict[str, typing.Any]]],
 ]
-OperationCallable = typing.Callable[["MetricWrapper", ValueTypes, typing.Optional[typing.Dict[str, str]]], None]
+
+OperationCallable = typing.Callable[
+    ["MetricWrapper", ValueTypes, MethodTreeNode, typing.Optional[typing.Dict[str, str]]], None
+]
 
 
 class StoreOperationDecorator:
@@ -129,19 +132,20 @@ class StoreOperationDecorator:
 
     def __get__(
         self, instance: MetricWrapper, owner: type[MetricWrapper]
-    ) -> typing.Callable[[ValueTypes, typing.Optional[typing.Dict[str, str]]], None]:
+    ) -> typing.Callable[[ValueTypes, MethodTreeNode, typing.Optional[typing.Dict[str, str]]], None]:
         """
 
         :param instance: instance of basic Prometheus metric
         :param owner: class of basic Prometheus metric
         :return: wrapper
         """
-        return lambda value, label_values=None: self.wrapper(instance, value, label_values)
+        return lambda value, current_node, label_values=None: self.wrapper(instance, value, current_node, label_values)
 
     def wrapper(
         self,
         instance: MetricWrapper,
         value: ValueTypes,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """
@@ -149,6 +153,7 @@ class StoreOperationDecorator:
         saves label_values, current method, and given operation with value. If any error occurs,
         record is not saved.
 
+        :param current_node: current node from ContextVar
         :param instance:instance of basic Prometheus metric
         :param value: measured value to be inserted
         :param label_values: values of labels in format {'label_name': 'label_value'}
@@ -166,17 +171,10 @@ class StoreOperationDecorator:
             return
         instance.label_values.append(label_values)
 
-        try:
-            instance.method.append(curr_node.get().ctx.value)
-        except LookupError:
-            instance.error(
-                f"{self.operation.__qualname__!r}: " f"metric {instance.name!r} cannot get current node from ContextVar"
-            )
-            _ = instance.label_values.pop(-1)
-            return
+        instance.method.append(current_node.ctx.value)
 
         try:
-            self.operation(instance, value, label_values)
+            self.operation(instance, value, current_node, label_values)
         except InvalidValueError as e:
             instance.error(f"{self.operation.__qualname__!r}: metric {instance.name!r} accepts only values {e}")
             _ = instance.method.pop(-1)
@@ -221,15 +219,18 @@ class Histogram(MetricWrapper):
     def observe(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing observe action of Histogram
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of labels and its values
         :raises InvalidValueError: if value is not float
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, float):
             raise InvalidValueError("Float")
         self.values.append(("observe", value))
@@ -263,15 +264,18 @@ class Summary(MetricWrapper):
     def observe(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing observe action of Summary
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not float
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, float):
             raise InvalidValueError("Float")
         self.values.append(("observe", value))
@@ -305,16 +309,19 @@ class Counter(MetricWrapper):
     def inc(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing inc action of counter
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not float >= 0
         """
 
         _ = label_values
+        _ = current_node
         if not isinstance(value, float) or value < 0:
             raise InvalidValueError("Float >= 0")
         self.values.append(("inc", value))
@@ -351,15 +358,18 @@ class Info(MetricWrapper):
     def info_(
         self,
         value: typing.Dict[typing.Any, typing.Any],
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing info action of info
 
         :param value: measured value
-                :param label_values: dictionary of key:value = 'label_name':'label_value'
+        :param current_node: current node from ContextVar
+        :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not dictionary
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, dict):
             raise InvalidValueError("Dict")
         self.values.append(("info", value))
@@ -393,15 +403,18 @@ class Gauge(MetricWrapper):
     def inc(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing inc action of gauge
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not float >= 0
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, float) or value < 0:
             raise InvalidValueError("Float >= 0")
         self.values.append(("inc", value))
@@ -410,15 +423,18 @@ class Gauge(MetricWrapper):
     def dec(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing dec action of gauge
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not float >= 0
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, float) or value < 0:
             raise InvalidValueError("Float >= 0")
         self.values.append(("dec", value))
@@ -427,15 +443,18 @@ class Gauge(MetricWrapper):
     def set(
         self,
         value: float,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing set action of gauge
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value is not float
         """
         _ = label_values
+        _ = current_node
         if not isinstance(value, float):
             raise InvalidValueError("Float")
         self.values.append(("set", value))
@@ -475,15 +494,18 @@ class Enum(MetricWrapper):
     def state(
         self,
         value: str,
+        current_node: MethodTreeNode,
         label_values: typing.Optional[typing.Dict[str, str]] = None,
     ) -> None:
         """Method representing state action of enum
 
         :param value: measured value
+        :param current_node: current node from ContextVar
         :param label_values: dictionary of key:value = 'label_name':'label_value'
         :raises InvalidValueError: if value not in states at initialization
         """
         _ = label_values
+        _ = current_node
         if value not in self.states:
             raise InvalidValueError(f"in {self.states}")
         self.values.append(("state", value))
@@ -510,11 +532,12 @@ class TimeProfiler(Histogram):
         self.debug("TimeProfiler metric initialized")
 
     # ############################### measurement operations -> checking labels, not sending records
-    def stop(self, start: datetime.datetime, label_values: typing.Dict[str, str]) -> None:
+    def stop(self, start: datetime.datetime, current_node: MethodTreeNode, label_values: typing.Dict[str, str]) -> None:
         """Records time difference between last start_ts and now"""
         method_time = dt.now() - start
         self.observe(
             round(method_time.total_seconds() * 1000.0, 2),
+            current_node,
             label_values,
         )
 
@@ -538,6 +561,6 @@ class ResponseSize(Histogram):
         super().__init__(name, job, "B", labels, logger)
         self.debug("ResponseSize metric initialized")
 
-    def rec(self, value: str, label_values: typing.Dict[str, str]) -> None:
+    def rec(self, value: str, current_node: MethodTreeNode, label_values: typing.Dict[str, str]) -> None:
         """records size of response"""
-        self.observe(float(sys.getsizeof(value)), label_values)
+        self.observe(float(sys.getsizeof(value)), current_node, label_values)

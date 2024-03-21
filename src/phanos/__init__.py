@@ -19,13 +19,9 @@ phanos_profiler: publisher.Profiler
 profiler = publisher.Profiler()
 
 
-def _deprecated():
-    warnings.warn("phanos_profiler is deprecated; use profiler instead", DeprecationWarning)
-    return profiler
-
-
 # deprecated; for backward compatibility,
-phanos_profiler = _deprecated()
+phanos_profiler = profiler
+
 
 # default instance profile method
 profile = profiler.profile
