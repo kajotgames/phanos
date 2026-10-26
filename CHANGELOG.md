@@ -6,6 +6,14 @@ this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-10-26
+
+### Fixed
+
+ - `ContextTree.find_and_delete_node` searched only the first branch of the tree - with concurrent requests
+   (async) a node of a finished request was not found and stayed in the tree forever (memory leak)
+ - `ContextTree.clear` skipped every other sibling node
+
 ## [0.3.2] - 2024-03-21
 
 ### Changed
