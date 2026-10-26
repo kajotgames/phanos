@@ -154,6 +154,21 @@ class TestContextTree(unittest.TestCase):
             mock_delete_node.assert_called_with(node)
 
     @unittest.skipUnless(test_init, SKIP_REASON_INIT)
+    def test_find_and_delete_node_beyond_first_branch(self):
+        """concurrent requests leave sibling nodes - a node in any branch must be found, not only in the first one"""
+        ctx_tree, node, child1, child2 = construct_tree()
+        sibling = MethodTreeNode(dummy_api.DummyDbAccess.test_method)
+        ctx_tree.root.add_child(sibling)
+
+        with self.subTest("second child of the root"):
+            self.assertTrue(ctx_tree.find_and_delete_node(sibling))
+            self.assertEqual(ctx_tree.root.children, [node])
+
+        with self.subTest("second child of a nested node"):
+            self.assertTrue(ctx_tree.find_and_delete_node(child2))
+            self.assertEqual(node.children, [child1])
+
+    @unittest.skipUnless(test_init, SKIP_REASON_INIT)
     @patch("src.phanos.tree.ContextTree.delete_node")
     def test_clear(self, mock_delete_node: MagicMock):
         """Check method for tree clearing"""
@@ -166,3 +181,16 @@ class TestContextTree(unittest.TestCase):
         self.assertIn(node, call_nodes)
         self.assertIn(child1, call_nodes)
         self.assertIn(child2, call_nodes)
+
+    @unittest.skipUnless(test_init, SKIP_REASON_INIT)
+    def test_clear_deletes_all_siblings(self):
+        ctx_tree, node, child1, child2 = construct_tree()
+        siblings = [MethodTreeNode(dummy_api.DummyDbAccess.test_method) for _ in range(3)]
+        for sibling in siblings:
+            ctx_tree.root.add_child(sibling)
+
+        ctx_tree.clear()
+
+        self.assertEqual(ctx_tree.root.children, [])
+        for deleted in [node, child1, child2, *siblings]:
+            self.assertIsNone(deleted.parent)
