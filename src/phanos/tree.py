@@ -122,7 +122,8 @@ class ContextTree(log.InstanceLoggerMixin):
             return deleted
 
         for child in root.children:
-            return self._find_and_delete_node(node, child)
+            if self._find_and_delete_node(node, child):
+                return True
 
         return False
 
@@ -141,7 +142,8 @@ class ContextTree(log.InstanceLoggerMixin):
 
     def _clear(self, root: MethodTreeNode) -> None:
         """Deletes whole subtree starting from param 'root'. Deletes from bottom to top"""
-        for child in root.children:
+        # a copy - deleting a child removes it from `root.children`
+        for child in list(root.children):
             self._clear(child)
 
         if not root == self.root:
